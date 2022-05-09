@@ -1,6 +1,6 @@
 cmake_minimum_required (VERSION 3.8)
 
-set (CMAKE_CXX_STANDARD 11)
+
 
 if(WIN32)
 	message(STATUS "PATH: $ENV{PATH}")
@@ -10,30 +10,30 @@ if(WIN32)
 	    message(STATUS "VCPKG_LOCAL_ROOT: ${VCPKG_LOCAL_ROOT}")
 	    message(STATUS "CMAKE_TOOLCHAIN_FILE: ${CMAKE_TOOLCHAIN_FILE}")
 	    if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-		    #set(CMAKE_TOOLCHAIN_FILE "${VCPKG_LOCAL_ROOT}/scripts/buildsystems/vcpkg.cmake"
-		    #	CACHE STRING "")
+		    set(CMAKE_TOOLCHAIN_FILE "${VCPKG_LOCAL_ROOT}/scripts/buildsystems/vcpkg.cmake"
+		    	CACHE STRING "")
 	    endif()
 	    message(STATUS "CMAKE_TOOLCHAIN_FILE: ${CMAKE_TOOLCHAIN_FILE}")
 	endif()
-	# try clang on windows
+	# using clang on windows
 	# Must be called before project call
-	if(EXISTS "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/Llvm/x64/bin/clang-cl.exe")
-		set(LLVM_PATH "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/Llvm/x64/bin")
-	elseif(EXISTS "C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Tools/Llvm/x64/bin/clang-cl.exe")
-		set(LLVM_PATH "C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Tools/Llvm/x64/bin")
+    message(STATUS "VCINSTALLDIR: $ENV{VCINSTALLDIR}")
+    if(DEFINED ENV{VCINSTALLDIR})
+        file(TO_CMAKE_PATH $ENV{VCINSTALLDIR} VC_INSTALL_DIR)
+	    if(EXISTS "${VC_INSTALL_DIR}/Tools/Llvm/x64/bin/clang-cl.exe")
+		    set(LLVM_PATH "${VC_INSTALL_DIR}/Tools/Llvm/x64/bin")
+	    endif()
+	    set(CMAKE_C_COMPILER "${LLVM_PATH}/clang-cl.exe")
+        set(CMAKE_CXX_COMPILER "${LLVM_PATH}/clang-cl.exe") 
+	    set(CMAKE_LINKER "${LLVM_PATH}/lld-link.exe")
 	endif()
-	set(CMAKE_C_COMPILER "${LLVM_PATH}/clang-cl.exe")
-    set(CMAKE_CXX_COMPILER "${LLVM_PATH}/clang-cl.exe") 
-	set(CMAKE_LINKER "${LLVM_PATH}/lld-link.exe")
-    #set(CMAKE_C_COMPILER_ID "Clang") 
-    #set(CMAKE_CXX_COMPILER_ID "Clang") 
-	
 else()
 	
 
 endif()
 
 project(dbus-broker)
+set (CMAKE_CXX_STANDARD 11)
 
 if(WIN32)
     include(TestBigEndian)
