@@ -1,0 +1,47 @@
+LIBCDVAR_1 {
+global:
+        c_dvar_type_y;
+        c_dvar_type_b;
+        c_dvar_type_n;
+        c_dvar_type_q;
+        c_dvar_type_i;
+        c_dvar_type_u;
+        c_dvar_type_x;
+        c_dvar_type_t;
+        c_dvar_type_h;
+        c_dvar_type_d;
+        c_dvar_type_s;
+        c_dvar_type_o;
+        c_dvar_type_g;
+        c_dvar_type_v;
+        c_dvar_type_unit;
+
+        c_dvar_type_new_from_signature;
+        c_dvar_type_free;
+        c_dvar_type_compare_string;
+
+        c_dvar_init;
+        c_dvar_deinit;
+        c_dvar_new;
+        c_dvar_free;
+
+        c_dvar_is_big_endian;
+        c_dvar_get_poison;
+        c_dvar_get_data;
+        c_dvar_get_root_types;
+        c_dvar_get_parent_types;
+
+        c_dvar_begin_read;
+        c_dvar_more;
+        c_dvar_vread;
+        c_dvar_vskip;
+        c_dvar_end_read;
+
+	c_dvar_is_path;
+
+        c_dvar_begin_write;
+        c_dvar_vwrite;
+        c_dvar_end_write;
+local:
+       *;
+};
