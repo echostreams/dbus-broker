@@ -57,6 +57,9 @@ if(WIN32)
 
 else()
     add_definitions(-D_GNU_SOURCE)
+	add_definitions(-DHAVE_REALLOCARRAY)
+	add_definitions(-DHAVE_NAME_TO_HANDLE_AT)
+	add_definitions(-DHAVE_STRUCT_STATX)
 
     # detect WSL
 	#CMAKE_SYSTEM_NAME:      Linux
@@ -84,6 +87,37 @@ include_directories(dep/c-rbtree/src)
 include_directories(dep/c-list/src)
 include_directories(dep/c-dvar/src)
 include_directories(dep/c-utf8/src)
+
+include_directories(systemd/src)
+
+include_directories(
+	"systemd/src/systemd"
+	"systemd/src/libsystemd/sd-bus"
+	"systemd/src/libsystemd/sd-id128"
+	"systemd/src/basic"
+	"systemd/src/fundamental"
+	"systemd/src/shared"
+)
+
+add_definitions(-DRELATIVE_SOURCE_PATH="systemd/src")
+add_definitions(-DGETTEXT_PACKAGE="systemd")
+add_definitions(-DNOBODY_USER_NAME="nobody")
+add_definitions(-DNOBODY_GROUP_NAME="nogroup")
+add_definitions(-DNOLOGIN="/usr/sbin/nologin")
+add_definitions(-DFALLBACK_HOSTNAME="buildroot")
+add_definitions(-DDEFAULT_HIERARCHY_NAME="hybrid")
+add_definitions(-DSYSTEMD_TEST_DATA="./testdata")
+add_definitions(-DSYSTEMD_CATALOG_DIR="./catalog")
+add_definitions(-DSYSTEMD_TTY_ASK_PASSWORD_AGENT_BINARY_PATH="/bin/systemd-tty-ask-password-agent")
+add_definitions(-DSYSTEMD_SLOW_TESTS_DEFAULT=0)
+add_definitions(-DBUILD_MODE_DEVELOPER)
+add_definitions(-DSIZEOF_TIME_T=8)
+add_definitions(-DSIZEOF_TIMEX_MEMBER=8)
+add_definitions(-DSIZEOF_RLIM_T=8)
+add_definitions(-DSIZEOF_DEV_T=8)
+add_definitions(-DSIZEOF_INO_T=8)
+add_definitions(-D_FILE_OFFSET_BITS=64)
+add_definitions(-DGPERF_LEN_TYPE=size_t)
 
 add_library(libcdvar
                 "dep/c-dvar/src/c-dvar.c"
@@ -172,6 +206,95 @@ if(NOT WIN32)
     target_compile_options(libbus PRIVATE -fvisibility=hidden -fno-common)
 endif()
 
+add_library(libsystemd-mini 
+	"systemd/src/libsystemd/sd-bus/bus-objects.c"
+	"systemd/src/libsystemd/sd-bus/bus-type.c"
+	"systemd/src/libsystemd/sd-bus/bus-internal.c"
+	"systemd/src/libsystemd/sd-bus/bus-slot.c"
+	"systemd/src/libsystemd/sd-bus/bus-error.c"
+	"systemd/src/libsystemd/sd-bus/bus-introspect.c"
+	"systemd/src/libsystemd/sd-bus/bus-signature.c"
+	"systemd/src/libsystemd/sd-bus/bus-match.c"
+	"systemd/src/libsystemd/sd-bus/bus-gvariant.c"
+	"systemd/src/libsystemd/sd-bus/bus-convenience.c"
+	"systemd/src/libsystemd/sd-bus/bus-kernel.c"
+	"systemd/src/libsystemd/sd-bus/bus-control.c"
+	#"systemd/src/libsystemd/sd-bus/bus-message.c"
+	#"systemd/src/libsystemd/sd-bus/sd-bus.c"
+	"systemd/src/libsystemd/sd-bus/bus-dump.c"
+	"systemd/src/libsystemd/sd-bus/bus-socket.c"
+	"systemd/src/libsystemd/sd-bus/bus-creds.c"
+	"systemd/src/libsystemd/sd-bus/bus-track.c"
+
+	"mini/bus-message.c"
+	"mini/sd-bus.c"
+	"mini/sd-event.c"
+	"mini/hashmap.c"
+	"mini/fileio.c"
+	"mini/path-util.c"
+	"mini/log.c"
+	"mini/strv.c"
+	"mini/randombytes.c"
+	"mini/escape.c"
+	"mini/string-util.c"
+	"mini/time-util.c"
+	"mini/locale-util.c"
+	"mini/tests.c"
+	"mini/fd-util.c"
+	"mini/fs-util.c"
+	"mini/socket-util.c"
+	"mini/user-util.c"
+	"mini/process-util.c"
+
+	"systemd/src/basic/errno-list.c"
+	"systemd/src/basic/ordered-set.c"
+	"systemd/src/basic/siphash24.c"
+	"systemd/src/basic/hash-funcs.c"
+	"systemd/src/basic/memory-util.c"
+	"systemd/src/basic/alloc-util.c"
+	"systemd/src/fundamental/string-util-fundamental.c"
+	"systemd/src/fundamental/sha256.c"
+	"systemd/src/shared/xml.c"
+	"systemd/src/basic/hmac.c"
+	"systemd/src/basic/glyph-util.c"
+	"systemd/src/basic/bus-label.c"
+	"systemd/src/basic/utf8.c"
+	"systemd/src/basic/gunicode.c"
+	"systemd/src/basic/prioq.c"
+	"systemd/src/basic/mempool.c"
+	"systemd/src/basic/io-util.c"
+	"systemd/src/basic/hexdecoct.c"
+	"systemd/src/basic/parse-util.c"
+	#"systemd/src/basic/socket-util.c"
+	#"systemd/src/shared/tests.c"
+	"systemd/src/shared/bus-object.c"
+	"systemd/src/shared/bus-print-properties.c"
+	#"systemd/src/shared/varlink.c"
+	"systemd/src/basic/extract-word.c"
+	"systemd/src/basic/strxcpyx.c"
+	"systemd/src/basic/ratelimit.c"
+
+	"windows/asprintf.c"
+	"windows/strndup.c"
+	"windows/getuid.cpp"
+	"windows/wepoll/getuid.cpp"
+	"windows/mmap.c"
+	"windows/win_clock_gettime.c"
+	"windows/socket.c"
+	"windows/posix.c"
+	"windows/wepoll/wepoll.c"
+	"windows/poll.c"
+	"windows/compat.c"
+	"windows/dump_wsaprotocol_info.c"
+
+	"systemd/src/busctl/busctl-introspect.c"
+
+	#"systemd/src/libsystemd/sd-event/sd-event.c"
+	"systemd/src/libsystemd/sd-daemon/sd-daemon.c"
+	"systemd/src/libsystemd/sd-id128/sd-id128.c"
+	"systemd/src/libsystemd/sd-id128/id128-util.c"
+)
+
 add_executable(dbus-broker
 	"src/broker/main.c"
 )
@@ -193,7 +316,7 @@ add_executable(test-broker
     "test/dbus/util-broker.c"
 )
 
-target_link_libraries(test-broker pthread systemd)
+target_link_libraries(test-broker pthread libsystemd-mini)
 
 
 add_executable(dbus-launch
@@ -201,4 +324,4 @@ add_executable(dbus-launch
     "test/dbus/util-broker.c"
 )
 
-target_link_libraries(dbus-launch pthread systemd)
+target_link_libraries(dbus-launch pthread libsystemd-mini)
