@@ -155,10 +155,17 @@ static void test_ping_pong(void) {
 }
 
 int main(int argc, char **argv) {
-        test_dummy();
-        test_connect();
-        test_self_ping();
-        test_ping_pong();
 
+    log_set_max_level(7);
+
+        printf("start...\n");
+        test_dummy();
+        printf("dummy...\n");
+        test_connect();
+        printf("connect...\n");
+        test_self_ping();
+        printf("self ping...\n");
+        test_ping_pong();
+        printf("ping pong...\n");
         return 0;
 }

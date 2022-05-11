@@ -12,6 +12,7 @@
 #include "string-util.h"
 
 int reset_all_signal_handlers(void) {
+#if defined(__linux__)
         static const struct sigaction sa = {
                 .sa_handler = SIG_DFL,
                 .sa_flags = SA_RESTART,
@@ -32,16 +33,25 @@ int reset_all_signal_handlers(void) {
         }
 
         return r;
+#else
+    return 0;
+#endif
 }
 
 int reset_signal_mask(void) {
+#if defined (__linux__)
         sigset_t ss;
 
         if (sigemptyset(&ss) < 0)
                 return -errno;
 
         return RET_NERRNO(sigprocmask(SIG_SETMASK, &ss, NULL));
+#else
+    return 0;
+#endif
 }
+
+#if defined(__linux__)
 
 int sigaction_many_internal(const struct sigaction *sa, ...) {
         int sig, r = 0;
@@ -282,3 +292,5 @@ int pop_pending_signal_internal(int sig, ...) {
 
         return r; /* Returns the signal popped */
 }
+
+#endif // __linux__

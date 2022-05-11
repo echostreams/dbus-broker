@@ -29,3 +29,8 @@
 typedef int clockid_t;
 
 extern int clock_gettime(clockid_t clock_id, struct timespec* tp);
+
+struct itimerspec {
+	struct timespec it_interval;	/* timer period */
+	struct timespec it_value;	/* timer expiration */
+};

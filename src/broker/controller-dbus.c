@@ -254,18 +254,27 @@ static int controller_method_add_listener(Controller *controller, const char *_p
         if (listener_fd < 0)
                 return CONTROLLER_E_LISTENER_INVALID_FD;
 
-        n = sizeof(v1);
+        
 #ifdef SO_DOMAIN
+        n = sizeof(v1);
         r = getsockopt(listener_fd, SOL_SOCKET, SO_DOMAIN, &v1, &n);
 #else
-        r = 0;
+        WSAPROTOCOL_INFOW Info;
+        INT InfoSize = sizeof(Info);
+        r = getsockopt(listener_fd, SOL_SOCKET, SO_PROTOCOL_INFO, (PCHAR)&Info, &InfoSize);
+        v1 = Info.iAddressFamily;
 #endif
         n = sizeof(v2);
-        r = r ?: getsockopt(listener_fd, SOL_SOCKET, SO_TYPE, &v2, &n);
+        r = r ? r : getsockopt(listener_fd, SOL_SOCKET, SO_TYPE, &v2, &n);
 
         if (r < 0)
                 return (errno == EBADF || errno == ENOTSOCK) ? CONTROLLER_E_LISTENER_INVALID_FD : error_origin(-errno);
+
+#ifdef WIN32
+        if (v1 != AF_INET || v2 != SOCK_STREAM)
+#else
         if (v1 != AF_UNIX || v2 != SOCK_STREAM)
+#endif
                 return CONTROLLER_E_LISTENER_INVALID_FD;
 
         r = controller_add_listener(controller, &listener, path, listener_fd, policy);

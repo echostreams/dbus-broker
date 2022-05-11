@@ -68,6 +68,8 @@ enum EPOLL_EVENTS {
 
 #define EPOLLET       0 // Edge-triggered (EPOLLET) mode isn't supported.
 
+#define EPOLL_CLOEXEC 0 // flags 
+
 #define EPOLL_CTL_ADD 1
 #define EPOLL_CTL_MOD 2
 #define EPOLL_CTL_DEL 3

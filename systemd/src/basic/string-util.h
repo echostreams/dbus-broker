@@ -34,6 +34,7 @@ char* strchrnul(const char* s, int c);
 #ifndef strdup
 #define strdup  _strdup
 #endif
+typedef SSIZE_T ssize_t;
 #endif
 
 static inline char* strstr_ptr(const char *haystack, const char *needle) {

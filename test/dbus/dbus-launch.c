@@ -12,6 +12,8 @@ int main(int argc, char** argv)
         void* value;
         int r;
 
+        log_set_max_level(7);
+
         util_broker_new(&broker);
         util_broker_spawn(broker);
 

@@ -32,6 +32,30 @@
 #ifdef WIN32
 #include <wepoll/wepoll.h>
 extern char* secure_getenv(const char* name);
+//#define WNOHANG		0x00000001
+#define WUNTRACED	0x00000002
+#define WSTOPPED	WUNTRACED
+#define WEXITED		0x00000004
+#define WCONTINUED	0x00000008
+#define WNOWAIT		0x01000000	/* Don't reap, just poll status.  */
+
+#define __WNOTHREAD	0x20000000	/* Don't wait on children of other threads in this group */
+#define __WALL		0x40000000	/* Wait on all children, regardless of type */
+#define __WCLONE	0x80000000	/* Wait only on non-SIGCHLD children */
+
+/* First argument to waitid: */
+#define P_ALL		0
+#define P_PID		1
+#define P_PGID		2
+#define P_PIDFD		3
+
+#define	SIGKILL	9	/* kill (cannot be caught or ignored) */
+#define	SIGCHLD	20	/* to parent on child stop or exit */
+
+#define TFD_TIMER_ABSTIME (1 << 0)
+
+#define EREMOTEIO       121 /* Remote I/O error */
+
 #endif
 
 #define DEFAULT_ACCURACY_USEC (250 * USEC_PER_MSEC)
@@ -339,6 +363,257 @@ static sd_event* event_free(sd_event* e) {
     return NULL;
 }
 
+static struct clock_data* event_get_clock_data(sd_event* e, EventSourceType t) {
+    assert(e);
+
+    switch (t) {
+
+    case SOURCE_TIME_REALTIME:
+        return &e->realtime;
+
+    case SOURCE_TIME_BOOTTIME:
+        return &e->boottime;
+
+    case SOURCE_TIME_MONOTONIC:
+        return &e->monotonic;
+
+    case SOURCE_TIME_REALTIME_ALARM:
+        return &e->realtime_alarm;
+
+    case SOURCE_TIME_BOOTTIME_ALARM:
+        return &e->boottime_alarm;
+
+    default:
+        return NULL;
+    }
+}
+
+static void event_source_time_prioq_remove(
+    sd_event_source* s,
+    struct clock_data* d) {
+
+    assert(s);
+    assert(d);
+
+    prioq_remove(d->earliest, s, &s->earliest_index);
+    prioq_remove(d->latest, s, &s->latest_index);
+    s->earliest_index = s->latest_index = PRIOQ_IDX_NULL;
+    d->needs_rearm = true;
+}
+
+static void source_child_pidfd_unregister(sd_event_source* s) {
+    assert(s);
+    assert(s->type == SOURCE_CHILD);
+
+    if (event_pid_changed(s->event))
+        return;
+
+    if (!s->child.registered)
+        return;
+
+    if (EVENT_SOURCE_WATCH_PIDFD(s))
+        if (epoll_ctl(s->event->epoll_fd, EPOLL_CTL_DEL, s->child.pidfd, NULL) < 0)
+            log_debug_errno(errno, "Failed to remove source %s (type %s) from epoll, ignoring: %m",
+                strna(s->description), event_source_type_to_string(s->type));
+
+    s->child.registered = false;
+}
+
+static int source_child_pidfd_register(sd_event_source* s, int enabled) {
+    assert(s);
+    assert(s->type == SOURCE_CHILD);
+    assert(enabled != SD_EVENT_OFF);
+
+    if (EVENT_SOURCE_WATCH_PIDFD(s)) {
+        struct epoll_event ev = {
+                .events = EPOLLIN | (enabled == SD_EVENT_ONESHOT ? EPOLLONESHOT : 0),
+                .data.ptr = s,
+        };
+
+        if (epoll_ctl(s->event->epoll_fd,
+            s->child.registered ? EPOLL_CTL_MOD : EPOLL_CTL_ADD,
+            s->child.pidfd, &ev) < 0)
+            return -errno;
+    }
+
+    s->child.registered = true;
+    return 0;
+}
+
+
+static void event_free_signal_data(sd_event* e, struct signal_data* d) {
+    assert(e);
+
+    if (!d)
+        return;
+
+    hashmap_remove(e->signal_data, &d->priority);
+    safe_close(d->fd);
+    free(d);
+}
+
+static int event_make_signal_data(
+    sd_event* e,
+    int sig,
+    struct signal_data** ret) {
+
+    struct signal_data* d;
+    bool added = false;
+    sigset_t ss_copy;
+    int64_t priority;
+    int r;
+
+    assert(e);
+
+    if (event_pid_changed(e))
+        return -ECHILD;
+
+    if (e->signal_sources && e->signal_sources[sig])
+        priority = e->signal_sources[sig]->priority;
+    else
+        priority = SD_EVENT_PRIORITY_NORMAL;
+
+    d = hashmap_get(e->signal_data, &priority);
+    if (d) {
+        if (sigismember(&d->sigset, sig) > 0) {
+            if (ret)
+                *ret = d;
+            return 0;
+        }
+    }
+    else {
+        d = new(struct signal_data, 1);
+        if (!d)
+            return -ENOMEM;
+
+        *d = (struct signal_data){
+                .wakeup = WAKEUP_SIGNAL_DATA,
+                .fd = -1,
+                .priority = priority,
+        };
+
+        r = hashmap_ensure_put(&e->signal_data, &uint64_hash_ops, &d->priority, d);
+        if (r < 0) {
+            free(d);
+            return r;
+        }
+
+        added = true;
+    }
+
+    ss_copy = d->sigset;
+    assert_se(sigaddset(&ss_copy, sig) >= 0);
+
+#if defined(__linux__)
+    r = signalfd(d->fd, &ss_copy, SFD_NONBLOCK | SFD_CLOEXEC);
+    if (r < 0) {
+        r = -errno;
+        goto fail;
+    }
+#endif
+
+    d->sigset = ss_copy;
+
+    if (d->fd >= 0) {
+        if (ret)
+            *ret = d;
+        return 0;
+    }
+
+    d->fd = fd_move_above_stdio(r);
+
+    struct epoll_event ev = {
+            .events = EPOLLIN,
+            .data.ptr = d,
+    };
+
+    if (epoll_ctl(e->epoll_fd, EPOLL_CTL_ADD, d->fd, &ev) < 0) {
+        r = -errno;
+        goto fail;
+    }
+
+    if (ret)
+        *ret = d;
+
+    return 0;
+
+fail:
+    if (added)
+        event_free_signal_data(e, d);
+
+    return r;
+}
+
+static void event_unmask_signal_data(sd_event* e, struct signal_data* d, int sig) {
+    assert(e);
+    assert(d);
+
+    /* Turns off the specified signal in the signal data
+     * object. If the signal mask of the object becomes empty that
+     * way removes it. */
+
+    if (sigismember(&d->sigset, sig) == 0)
+        return;
+
+    assert_se(sigdelset(&d->sigset, sig) >= 0);
+
+    if (sigisemptyset(&d->sigset)) {
+        /* If all the mask is all-zero we can get rid of the structure */
+        event_free_signal_data(e, d);
+        return;
+    }
+
+    assert(d->fd >= 0);
+#if defined(__linux__)
+    if (signalfd(d->fd, &d->sigset, SFD_NONBLOCK | SFD_CLOEXEC) < 0)
+        log_debug_errno(errno, "Failed to unset signal bit, ignoring: %m");
+#endif
+}
+
+static void event_gc_signal_data(sd_event* e, const int64_t* priority, int sig) {
+    struct signal_data* d;
+    static const int64_t zero_priority = 0;
+
+    assert(e);
+
+    /* Rechecks if the specified signal is still something we are interested in. If not, we'll unmask it,
+     * and possibly drop the signalfd for it. */
+
+    if (sig == SIGCHLD &&
+        e->n_online_child_sources > 0)
+        return;
+
+    if (e->signal_sources &&
+        e->signal_sources[sig] &&
+        event_source_is_online(e->signal_sources[sig]))
+        return;
+
+    /*
+     * The specified signal might be enabled in three different queues:
+     *
+     * 1) the one that belongs to the priority passed (if it is non-NULL)
+     * 2) the one that belongs to the priority of the event source of the signal (if there is one)
+     * 3) the 0 priority (to cover the SIGCHLD case)
+     *
+     * Hence, let's remove it from all three here.
+     */
+
+    if (priority) {
+        d = hashmap_get(e->signal_data, priority);
+        if (d)
+            event_unmask_signal_data(e, d, sig);
+    }
+
+    if (e->signal_sources && e->signal_sources[sig]) {
+        d = hashmap_get(e->signal_data, &e->signal_sources[sig]->priority);
+        if (d)
+            event_unmask_signal_data(e, d, sig);
+    }
+
+    d = hashmap_get(e->signal_data, &zero_priority);
+    if (d)
+        event_unmask_signal_data(e, d, sig);
+}
 
 static void source_disconnect(sd_event_source* s) {
     sd_event* event;
@@ -368,17 +643,15 @@ static void source_disconnect(sd_event_source* s) {
          * differ: ratelimiting always uses CLOCK_MONOTONIC, but timer events might use any clock */
 
         if (!s->ratelimited) {
-#if 0
             struct clock_data* d;
             assert_se(d = event_get_clock_data(s->event, s->type));
             event_source_time_prioq_remove(s, d);
-#endif
         }
 
         break;
 
     case SOURCE_SIGNAL:
-#if 0
+
         if (s->signal.sig > 0) {
 
             if (s->event->signal_sources)
@@ -386,11 +659,11 @@ static void source_disconnect(sd_event_source* s) {
 
             event_gc_signal_data(s->event, &s->priority, s->signal.sig);
         }
-#endif
+
         break;
 
     case SOURCE_CHILD:
-#if 0
+
         if (s->child.pid > 0) {
             if (event_source_is_online(s)) {
                 assert(s->event->n_online_child_sources > 0);
@@ -404,7 +677,7 @@ static void source_disconnect(sd_event_source* s) {
             source_child_pidfd_unregister(s);
         else
             event_gc_signal_data(s->event, &s->priority, SIGCHLD);
-#endif
+
         break;
 
     case SOURCE_DEFER:
@@ -466,10 +739,10 @@ static void source_disconnect(sd_event_source* s) {
 
     if (s->prepare)
         prioq_remove(s->event->prepare, s, &s->prepare_index);
-#if 0
+
     if (s->ratelimited)
         event_source_time_prioq_remove(s, &s->event->monotonic);
-#endif
+
     //event = TAKE_PTR(s->event);
     event = s->event;
     s->event = NULL;
@@ -492,7 +765,6 @@ static sd_event_source* source_free(sd_event_source* s) {
     if (s->type == SOURCE_IO && s->io.owned)
         s->io.fd = safe_close(s->io.fd);
 
-#if 0
     if (s->type == SOURCE_CHILD) {
         /* Eventually the kernel will do this automatically for us, but for now let's emulate this (unreliably) in userspace. */
 
@@ -531,7 +803,7 @@ static sd_event_source* source_free(sd_event_source* s) {
         if (s->child.pidfd_owned)
             s->child.pidfd = safe_close(s->child.pidfd);
     }
-#endif
+
     if (s->destroy_callback)
         s->destroy_callback(s->userdata);
 
@@ -688,31 +960,6 @@ DEFINE_PUBLIC_TRIVIAL_REF_UNREF_FUNC(sd_event_source, sd_event_source, event_sou
 
 DEFINE_PUBLIC_TRIVIAL_REF_UNREF_FUNC(sd_event, sd_event, event_free);
 
-static struct clock_data* event_get_clock_data(sd_event* e, EventSourceType t) {
-    assert(e);
-
-    switch (t) {
-
-    case SOURCE_TIME_REALTIME:
-        return &e->realtime;
-
-    case SOURCE_TIME_BOOTTIME:
-        return &e->boottime;
-
-    case SOURCE_TIME_MONOTONIC:
-        return &e->monotonic;
-
-    case SOURCE_TIME_REALTIME_ALARM:
-        return &e->realtime_alarm;
-
-    case SOURCE_TIME_BOOTTIME_ALARM:
-        return &e->boottime_alarm;
-
-    default:
-        return NULL;
-    }
-}
-
 static void event_source_time_prioq_reshuffle(sd_event_source* s) {
     struct clock_data* d;
 
@@ -734,18 +981,7 @@ static void event_source_time_prioq_reshuffle(sd_event_source* s) {
     d->needs_rearm = true;
 }
 
-static void event_source_time_prioq_remove(
-    sd_event_source* s,
-    struct clock_data* d) {
 
-    assert(s);
-    assert(d);
-
-    prioq_remove(d->earliest, s, &s->earliest_index);
-    prioq_remove(d->latest, s, &s->latest_index);
-    s->earliest_index = s->latest_index = PRIOQ_IDX_NULL;
-    d->needs_rearm = true;
-}
 
 static int source_set_pending(sd_event_source* s, bool b) {
     int r;
@@ -1060,7 +1296,7 @@ _public_ int sd_event_source_set_priority(sd_event_source* s, int64_t priority) 
 #endif
     }
     else if (s->type == SOURCE_SIGNAL && event_source_is_online(s)) {
-#if 0
+
         struct signal_data* old, * d;
 
         /* Move us from the signalfd belonging to the old
@@ -1077,7 +1313,7 @@ _public_ int sd_event_source_set_priority(sd_event_source* s, int64_t priority) 
         }
 
         event_unmask_signal_data(s->event, old, s->signal.sig);
-#endif
+
     }
     else
         s->priority = priority;
@@ -1133,13 +1369,11 @@ static int event_source_offline(
         break;
 
     case SOURCE_SIGNAL:
-#if 0
         event_gc_signal_data(s->event, &s->priority, s->signal.sig);
-#endif
         break;
 
     case SOURCE_CHILD:
-#if 0
+
         if (!was_offline) {
             assert(s->event->n_online_child_sources > 0);
             s->event->n_online_child_sources--;
@@ -1149,7 +1383,7 @@ static int event_source_offline(
             source_child_pidfd_unregister(s);
         else
             event_gc_signal_data(s->event, &s->priority, SIGCHLD);
-#endif
+
         break;
 
     case SOURCE_EXIT:
@@ -1216,17 +1450,14 @@ static int event_source_online(
         break;
 
     case SOURCE_SIGNAL:
-#if 0
         r = event_make_signal_data(s->event, s->signal.sig, NULL);
         if (r < 0) {
             event_gc_signal_data(s->event, &s->priority, s->signal.sig);
             return r;
         }
-#endif
         break;
 
     case SOURCE_CHILD:
-#if 0
         if (EVENT_SOURCE_WATCH_PIDFD(s)) {
             /* yes, we have pidfd */
 
@@ -1246,7 +1477,6 @@ static int event_source_online(
 
         if (!was_online)
             s->event->n_online_child_sources++;
-#endif
         break;
 
     case SOURCE_TIME_REALTIME:
@@ -1626,7 +1856,7 @@ _public_ int sd_event_add_signal(
 
     if (!callback)
         callback = signal_exit_callback;
-#if 0
+
     r = signal_is_blocked(sig);
     if (r < 0)
         return r;
@@ -1662,7 +1892,7 @@ _public_ int sd_event_add_signal(
     if (ret)
         *ret = s;
     TAKE_PTR(s);
-#endif
+
     return 0;
 }
 
@@ -1719,127 +1949,9 @@ _public_ int sd_event_add_exit(
     return 0;
 }
 
-static int source_child_pidfd_register(sd_event_source* s, int enabled) {
-    assert(s);
-    assert(s->type == SOURCE_CHILD);
-    assert(enabled != SD_EVENT_OFF);
 
-    if (EVENT_SOURCE_WATCH_PIDFD(s)) {
-        struct epoll_event ev = {
-                .events = EPOLLIN | (enabled == SD_EVENT_ONESHOT ? EPOLLONESHOT : 0),
-                .data.ptr = s,
-        };
 
-        if (epoll_ctl(s->event->epoll_fd,
-            s->child.registered ? EPOLL_CTL_MOD : EPOLL_CTL_ADD,
-            s->child.pidfd, &ev) < 0)
-            return -errno;
-    }
 
-    s->child.registered = true;
-    return 0;
-}
-
-static void event_free_signal_data(sd_event* e, struct signal_data* d) {
-    assert(e);
-
-    if (!d)
-        return;
-
-    hashmap_remove(e->signal_data, &d->priority);
-    safe_close(d->fd);
-    free(d);
-}
-
-static int event_make_signal_data(
-    sd_event* e,
-    int sig,
-    struct signal_data** ret) {
-
-    struct signal_data* d;
-    bool added = false;
-    sigset_t ss_copy;
-    int64_t priority;
-    int r;
-
-    assert(e);
-
-    if (event_pid_changed(e))
-        return -ECHILD;
-
-    if (e->signal_sources && e->signal_sources[sig])
-        priority = e->signal_sources[sig]->priority;
-    else
-        priority = SD_EVENT_PRIORITY_NORMAL;
-
-    d = hashmap_get(e->signal_data, &priority);
-    if (d) {
-        if (sigismember(&d->sigset, sig) > 0) {
-            if (ret)
-                *ret = d;
-            return 0;
-        }
-    }
-    else {
-        d = new(struct signal_data, 1);
-        if (!d)
-            return -ENOMEM;
-
-        *d = (struct signal_data){
-                .wakeup = WAKEUP_SIGNAL_DATA,
-                .fd = -1,
-                .priority = priority,
-        };
-
-        r = hashmap_ensure_put(&e->signal_data, &uint64_hash_ops, &d->priority, d);
-        if (r < 0) {
-            free(d);
-            return r;
-        }
-
-        added = true;
-    }
-
-    ss_copy = d->sigset;
-    assert_se(sigaddset(&ss_copy, sig) >= 0);
-
-    r = signalfd(d->fd, &ss_copy, SFD_NONBLOCK | SFD_CLOEXEC);
-    if (r < 0) {
-        r = -errno;
-        goto fail;
-    }
-
-    d->sigset = ss_copy;
-
-    if (d->fd >= 0) {
-        if (ret)
-            *ret = d;
-        return 0;
-    }
-
-    d->fd = fd_move_above_stdio(r);
-
-    struct epoll_event ev = {
-            .events = EPOLLIN,
-            .data.ptr = d,
-    };
-
-    if (epoll_ctl(e->epoll_fd, EPOLL_CTL_ADD, d->fd, &ev) < 0) {
-        r = -errno;
-        goto fail;
-    }
-
-    if (ret)
-        *ret = d;
-
-    return 0;
-
-fail:
-    if (added)
-        event_free_signal_data(e, d);
-
-    return r;
-}
 
 _public_ int sd_event_add_child(
     sd_event* e,
@@ -1870,13 +1982,13 @@ _public_ int sd_event_add_child(
          * take effect.
          *
          * (As an optimization we only do this check on the first child event source created.) */
-#if 0
+
         r = signal_is_blocked(SIGCHLD);
         if (r < 0)
             return r;
         if (r == 0)
             return -EBUSY;
-#endif
+
     }
 
     r = hashmap_ensure_allocated(&e->child_sources, NULL);
@@ -2612,8 +2724,9 @@ static int source_dispatch(sd_event_source* s) {
 
         zombie = IN_SET(s->child.siginfo.si_code, CLD_EXITED, CLD_KILLED, CLD_DUMPED);
 
+#if defined (_GNU_SOURCE)
         r = s->child.callback(s, &s->child.siginfo, s->userdata);
-
+#endif
         /* Now, reap the PID for good. */
         if (zombie) {
             (void)waitid(P_PID, s->child.pid, &s->child.siginfo, WNOHANG | WEXITED);

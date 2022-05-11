@@ -224,7 +224,7 @@ int dispatch_context_init(DispatchContext *ctx) {
         *ctx = (DispatchContext)DISPATCH_CONTEXT_NULL(*ctx);
 
 #ifdef WIN32
-        ctx->epoll_fd = epoll_create1(2000000);
+        ctx->epoll_fd = epoll_create1(0);
 #else
         ctx->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
 #endif

@@ -54,11 +54,12 @@ if(WIN32)
     
     include_directories(windows/posix/include)
     include_directories(windows)
-
+	add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 else()
     add_definitions(-D_GNU_SOURCE)
 	add_definitions(-DHAVE_REALLOCARRAY)
 	add_definitions(-DHAVE_NAME_TO_HANDLE_AT)
+	add_definitions(-DWANT_LINUX_STAT_H)
 	add_definitions(-DHAVE_STRUCT_STATX)
 
     # detect WSL
@@ -88,7 +89,7 @@ include_directories(dep/c-list/src)
 include_directories(dep/c-dvar/src)
 include_directories(dep/c-utf8/src)
 
-include_directories(systemd/src)
+include_directories(BEFORE systemd/src)
 
 include_directories(
 	"systemd/src/systemd"
@@ -99,7 +100,11 @@ include_directories(
 	"systemd/src/shared"
 )
 
-add_definitions(-DRELATIVE_SOURCE_PATH="systemd/src")
+if(WIN32)
+	add_definitions(-DRELATIVE_SOURCE_PATH="..\\\\..\\\\..\\\\systemd\\\\src")
+else()
+	add_definitions(-DRELATIVE_SOURCE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/systemd/src")
+endif()
 add_definitions(-DGETTEXT_PACKAGE="systemd")
 add_definitions(-DNOBODY_USER_NAME="nobody")
 add_definitions(-DNOBODY_GROUP_NAME="nogroup")
@@ -273,6 +278,8 @@ add_library(libsystemd-mini
 	"systemd/src/basic/extract-word.c"
 	"systemd/src/basic/strxcpyx.c"
 	"systemd/src/basic/ratelimit.c"
+	"systemd/src/basic/signal-util.c"
+	"systemd/src/basic/string-table.c"
 
 	"windows/asprintf.c"
 	"windows/strndup.c"
@@ -316,12 +323,35 @@ add_executable(test-broker
     "test/dbus/util-broker.c"
 )
 
-target_link_libraries(test-broker pthread libsystemd-mini)
 
+if(WIN32)
 
-add_executable(dbus-launch
-    "test/dbus/dbus-launch.c"
-    "test/dbus/util-broker.c"
+	add_executable(dbus-launch
+		"test/dbus/dbus-launch-win.c"
+		#"test/dbus/util-broker.c"
+	)
+	target_link_libraries(dbus-launch ws2_32)
+
+else()
+
+	add_executable(dbus-launch
+		"test/dbus/dbus-launch.c"
+		"test/dbus/util-broker.c"
+	)
+
+endif()
+
+target_link_libraries(test-broker libsystemd-mini)
+target_link_libraries(dbus-launch libsystemd-mini)
+if(NOT WIN32)
+	target_link_libraries(test-broker pthread)
+	target_link_libraries(dbus-launch pthread)
+endif()
+
+add_subdirectory("libuv-1.44.1")
+
+add_executable(tcp-echo
+	"test/tcp-echo.c"
 )
 
-target_link_libraries(dbus-launch pthread libsystemd-mini)
+target_link_libraries(tcp-echo uv_a)

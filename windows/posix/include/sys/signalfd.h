@@ -228,11 +228,50 @@ struct {				\
 }
 #endif /* __ARCH_HAS_SWAPPED_SIGINFO */
 
+/*
 typedef struct siginfo {
 	union {
 		__SIGINFO;
 		int _si_pad[SI_MAX_SIZE / sizeof(int)];
 	};
 } __ARCH_SI_ATTRIBUTES siginfo_t;
+*/
+
+typedef struct {
+	int si_signo;
+	int si_code;
+	union sigval si_value;
+	int si_errno;
+	/*pid_t*/int si_pid;
+	/*uid_t*/unsigned int si_uid;
+	void* si_addr;
+	int si_status;
+	int si_band;
+} siginfo_t;
+
+#ifndef __KERNEL__
+#define __SI_KILL	0
+#define __SI_TIMER	0
+#define __SI_POLL	0
+#define __SI_FAULT	0
+#define __SI_CHLD	0
+#define __SI_RT		0
+#define __SI_MESGQ	0
+#define __SI_SYS	0
+#define __SI_CODE(T,N)	(N)
+#endif
+
+/*
+ * SIGCHLD si_codes
+ */
+#define CLD_EXITED	(__SI_CHLD|1)	/* child has exited */
+#define CLD_KILLED	(__SI_CHLD|2)	/* child was killed */
+#define CLD_DUMPED	(__SI_CHLD|3)	/* child terminated abnormally */
+#define CLD_TRAPPED	(__SI_CHLD|4)	/* traced child has trapped */
+#define CLD_STOPPED	(__SI_CHLD|5)	/* child has stopped */
+#define CLD_CONTINUED	(__SI_CHLD|6)	/* stopped child has continued */
+#define NSIGCHLD	6
+
+
 
 #endif /* _UAPI_LINUX_SIGNALFD_H */

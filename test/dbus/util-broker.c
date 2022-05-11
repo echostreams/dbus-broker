@@ -22,6 +22,10 @@
 #include "util/syscall.h"
 #include "util-broker.h"
 
+#ifdef WIN32
+#define SIGUSR1 10
+#endif
+
 void util_event_new(sd_event **eventp) {
         _c_cleanup_(sd_event_unrefp) sd_event *event = NULL;
         sigset_t sigold;
@@ -30,9 +34,11 @@ void util_event_new(sd_event **eventp) {
         r = sd_event_default(&event);
         c_assert(r >= 0);
 
+#if defined(__linux__)
         pthread_sigmask(SIG_BLOCK, NULL, &sigold);
         c_assert(sigismember(&sigold, SIGCHLD) == 1);
         c_assert(sigismember(&sigold, SIGUSR1) == 1);
+#endif
 
         *eventp = event;
         event = NULL;
@@ -183,8 +189,11 @@ void util_fork_broker(sd_bus **busp, sd_event *event, int listener_fd, pid_t *pi
         _c_cleanup_(c_freep) char *fdstr = NULL;
         int r, pair[2];
         pid_t pid;
-
+#ifdef WIN32
+        r = socketpair(AF_INET, SOCK_STREAM, 0, pair);
+#else
         r = socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, pair);
+#endif
         c_assert(r >= 0);
 
         pid = fork();
@@ -423,6 +432,7 @@ void util_broker_spawn(Broker *broker) {
         c_assert(broker->pipe_fds[0] < 0);
         c_assert(broker->pipe_fds[1] < 0);
 
+#if defined(__linux__)
         /*
          * Lets make sure we exit if our parent does. We are a test-runner, so
          * this should be enforced by our environment, but sadly it isn't. So
@@ -444,6 +454,7 @@ void util_broker_spawn(Broker *broker) {
         sigemptyset(&signew);
         sigaddset(&signew, SIGUSR1);
         pthread_sigmask(SIG_BLOCK, &signew, &sigold);
+#endif
 
         /*
          * Create a pipe object that we inherit into the forked daemon. In case
@@ -451,11 +462,17 @@ void util_broker_spawn(Broker *broker) {
          * case of dbus-broker, we use it to block until our child called
          * exec() (as a synchronization primitive).
          */
+
+#ifdef WIN32
+        r = _pipe(broker->pipe_fds, 256, O_BINARY);
+#else
 #ifdef WSL2
         r = pipe2(broker->pipe_fds, O_CLOEXEC);
 #else
         r = pipe2(broker->pipe_fds, O_CLOEXEC | O_DIRECT);
-#endif
+#endif // WSL2  
+#endif // WIN32
+
         c_assert(r >= 0);
 
         if (getenv("DBUS_BROKER_TEST_DAEMON")) {
@@ -466,7 +483,7 @@ void util_broker_spawn(Broker *broker) {
                  * We use this both as synchronization primitive, and as a way
                  * to retrieve the unix-address from dbus-daemon(1).
                  */
-
+#if defined(__linux__)
                 r = pthread_create(&broker->thread, NULL, util_broker_thread, broker);
                 c_assert(r >= 0);
 
@@ -485,14 +502,19 @@ void util_broker_spawn(Broker *broker) {
                 --e;
                 c_assert(*e == ',');
                 broker->n_address = e - (char *)&broker->address;
+#endif
+
         } else {
                 /*
                  * Create listener socket, let the kernel pick a random address
                  * and remember it in @broker. Spawn a thread, which will then
                  * run and babysit the broker.
                  */
-
+#ifdef WIN32
+            broker->listener_fd = socket(AF_INET, SOCK_STREAM, 0);
+#else
                 broker->listener_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+#endif
                 c_assert(broker->listener_fd >= 0);
 
                 r = bind(broker->listener_fd, (struct sockaddr *)&broker->address, offsetof(struct sockaddr_un, sun_path));
@@ -517,7 +539,9 @@ void util_broker_spawn(Broker *broker) {
         r = read(broker->pipe_fds[0], buffer, sizeof(buffer) - 1);
         c_assert(!r);
 
+#if defined(__linux__)
         pthread_sigmask(SIG_SETMASK, &sigold, NULL);
+#endif
 }
 
 void util_broker_terminate(Broker *broker) {
@@ -567,8 +591,11 @@ void util_broker_settle(Broker *broker) {
 void util_broker_connect_fd(Broker *broker, int *fdp) {
         _c_cleanup_(c_closep) int fd = -1;
         int r;
-
+#ifdef WIN32
+        fd = socket(AF_INET, SOCK_STREAM, 0);
+#else
         fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+#endif
         c_assert(fd >= 0);
 
         r = connect(fd, (struct sockaddr *)&broker->address, broker->n_address);
@@ -582,8 +609,11 @@ void util_broker_connect_raw(Broker *broker, sd_bus **busp) {
         _c_cleanup_(sd_bus_flush_close_unrefp) sd_bus *bus = NULL;
         _c_cleanup_(c_closep) int fd = -1;
         int r;
-
+#ifdef WIN32
+        fd = socket(AF_INET, SOCK_STREAM, 0);
+#else
         fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+#endif
         c_assert(fd >= 0);
 
         r = connect(fd, (struct sockaddr *)&broker->address, broker->n_address);
@@ -608,8 +638,11 @@ void util_broker_connect(Broker *broker, sd_bus **busp) {
         _c_cleanup_(sd_bus_flush_close_unrefp) sd_bus *bus = NULL;
         _c_cleanup_(c_closep) int fd = -1;
         int r;
-
+#ifdef WIN32
+        fd = socket(AF_INET, SOCK_STREAM, 0);
+#else
         fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+#endif
         c_assert(fd >= 0);
 
         r = connect(fd, (struct sockaddr *)&broker->address, broker->n_address);
@@ -658,7 +691,11 @@ void util_broker_disconnect(sd_bus *bus) {
         r = sd_bus_flush(bus);
         c_assert(r >= 0);
 
+#ifdef WIN32
+        r = shutdown(sd_bus_get_fd(bus), SD_SEND);
+#else
         r = shutdown(sd_bus_get_fd(bus), SHUT_WR);
+#endif
         c_assert(r >= 0);
 
         for (;;) {

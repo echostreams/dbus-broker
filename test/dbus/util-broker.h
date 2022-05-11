@@ -19,8 +19,13 @@
 typedef struct Broker Broker;
 
 struct Broker {
+#ifdef WIN32
+    HANDLE thread;
+    struct sockaddr address;
+#else
         pthread_t thread;
         struct sockaddr_un address;
+#endif
         socklen_t n_address;
         int listener_fd;
         int pipe_fds[2];
@@ -28,6 +33,15 @@ struct Broker {
         pid_t child_pid;
 };
 
+#ifdef WIN32
+#define BROKER_NULL {                                                           \
+                .address.sa_family = AF_INET,                                   \
+                .n_address = sizeof(struct sockaddr),                           \
+                .listener_fd = -1,                                              \
+                .pipe_fds[0] = -1,                                              \
+                .pipe_fds[1] = -1,                                              \
+        }
+#else
 #define BROKER_NULL {                                                           \
                 .address.sun_family = AF_UNIX,                                  \
                 .n_address = sizeof(struct sockaddr_un),                        \
@@ -35,6 +49,7 @@ struct Broker {
                 .pipe_fds[0] = -1,                                              \
                 .pipe_fds[1] = -1,                                              \
         }
+#endif
 
 /* misc */
 
