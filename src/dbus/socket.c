@@ -572,6 +572,13 @@ static int socket_recvmsg(Socket *socket,
                 socket_hangup_input(socket);
                 return SOCKET_E_LOST_INTEREST;
         } else if (_c_unlikely_(l < 0)) {
+
+#ifdef WIN32
+            DWORD err = WSAGetLastError();
+            if (err == WSAEWOULDBLOCK)
+                return 0;
+#endif
+
                 switch (errno) {
                 case EAGAIN:
                         return 0;

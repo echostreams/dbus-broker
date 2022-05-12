@@ -94,6 +94,13 @@ SOCKET ConvertProcessSocket(SOCKET oldsocket, DWORD source_pid)
         fprintf(stderr, "DuplicateHandle(%d -> %d)\n", oldsocket, newhandle);
     }
     CloseHandle(source_handle);
+
+    int iResult;
+    u_long iMode = 1;
+    iResult = ioctlsocket(newhandle, FIONBIO, &iMode);
+    if (iResult != NO_ERROR)
+        printf("ioctlsocket failed with error: %ld\n", iResult);
+
     return (SOCKET)newhandle;
 }
 
@@ -172,7 +179,7 @@ int policy_c_dvar_test()
     //};
 
     int r;
-    ControllerListener* listener;
+    //ControllerListener* listener;
     PolicyRegistry* policy = NULL;
     r = policy_registry_new(&policy, /*broker->bus.seclabel*/"");
     if (r)
@@ -224,6 +231,71 @@ int policy_c_dvar_test()
     r = c_dvar_end_read(var);
     c_assert(!r);
     free(data);
+
+    return 0;
+
+#endif // WIN32
+}
+
+int CreateWinControllerSocket()
+{
+#ifdef WIN32
+    int r;
+    /*
+     * Create listener socket, let the kernel pick a random address
+     * and remember it in @broker. Spawn a thread, which will then
+     * run and babysit the broker.
+     */
+    SOCKET listener_fd = socket(AF_INET, SOCK_STREAM, 0);
+    c_assert(listener_fd >= 0);
+
+    struct addrinfo hints, * res;
+    // Before using hint you have to make sure that the data structure is empty 
+    memset(&hints, 0, sizeof(hints));
+    // Set the attribute for hint
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM; // TCP Socket SOCK_DGRAM 
+    hints.ai_protocol = IPPROTO_TCP;
+    hints.ai_flags = AI_PASSIVE;
+
+    // Fill the res data structure and make sure that the results make sense. 
+    int status = getaddrinfo(NULL, "9000", &hints, &res);
+    if (status != 0)
+    {
+        fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(status));
+        return -1;
+    }
+    /*************************************************************/
+    /* Set socket to be nonblocking. All of the sockets for      */
+    /* the incoming connections will also be nonblocking since   */
+    /* they will inherit that state from the listening socket.   */
+    /*************************************************************/
+    u_long iMode = 1;
+    status = ioctlsocket(listener_fd, FIONBIO, &iMode);
+    if (status != NO_ERROR) {
+        printf("ioctlsocket failed with error: %ld\n", status);
+    }
+
+    r = bind(listener_fd, res->ai_addr, res->ai_addrlen);
+    c_assert(r >= 0);
+
+    char bindaddr[64];
+    uint32_t a;
+    struct sockaddr_in* sa = (struct sockaddr_in*)res->ai_addr;
+    a = be32toh(sa->sin_addr.s_addr);
+
+    r = sprintf(bindaddr,
+        "%u.%u.%u.%u:%u",
+        a >> 24, (a >> 16) & 0xFF, (a >> 8) & 0xFF, a & 0xFF,
+        be16toh(sa->sin_port));
+
+    printf("I am now accepting connections at %s ...\n", bindaddr);
+    freeaddrinfo(res);
+
+    r = listen(listener_fd, 256);
+    c_assert(r >= 0);
+
+    return listener_fd;
 
 #endif // WIN32
 }
@@ -437,6 +509,10 @@ static int parse_argv(int argc, char *argv[]) {
                 n = sizeof(v1);
                 r = getsockopt(main_arg_controller, SOL_SOCKET, SO_DOMAIN, &v1, &n);
 #else
+
+#ifdef WIN32
+                //main_arg_controller = CreateWinControllerSocket();
+#endif
                 WSAPROTOCOL_INFOW Info;
                 INT InfoSize = sizeof(Info);
                 r = getsockopt(main_arg_controller, SOL_SOCKET, SO_PROTOCOL_INFO, (PCHAR)&Info, &InfoSize);

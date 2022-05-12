@@ -458,6 +458,7 @@ void win_broker_spawn(Broker* broker) {
          * and remember it in @broker. Spawn a thread, which will then
          * run and babysit the broker.
          */
+#if 1
         broker->listener_fd = socket(AF_INET, SOCK_STREAM, 0);
         c_assert(broker->listener_fd >= 0);
 
@@ -479,6 +480,12 @@ void win_broker_spawn(Broker* broker) {
             return;
         }
 
+        u_long iMode = 1;
+        status = ioctlsocket(broker->listener_fd, FIONBIO, &iMode);
+        if (status != NO_ERROR) {
+            printf("ioctlsocket failed with error: %ld\n", status);
+        }
+
         r = bind(broker->listener_fd, res->ai_addr, res->ai_addrlen);
         c_assert(r >= 0);
 
@@ -494,6 +501,7 @@ void win_broker_spawn(Broker* broker) {
 
         r = listen(broker->listener_fd, 256);
         c_assert(r >= 0);
+#endif
 
 #ifdef WIN32
         broker->thread = _beginthread(win_broker_thread, 0, (void*)broker);
@@ -543,8 +551,8 @@ int main(int argc, char** argv)
     //c_assert(!r);
     //c_assert(!value);
 
-    //c_assert(broker->listener_fd < 0);
-    //c_assert(broker->pipe_fds[0] < 0);
+    c_assert(broker->listener_fd < 0);
+    c_assert(broker->pipe_fds[0] < 0);
 
     WSACleanup();
 

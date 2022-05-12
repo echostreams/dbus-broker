@@ -318,12 +318,6 @@ else()
 endif()
 
 
-add_executable(test-broker
-    "test/dbus/test-broker.c"
-    "test/dbus/util-broker.c"
-)
-
-
 if(WIN32)
 
 	add_executable(dbus-launch
@@ -338,15 +332,16 @@ else()
 		"test/dbus/dbus-launch.c"
 		"test/dbus/util-broker.c"
 	)
-
-endif()
-
-target_link_libraries(test-broker libsystemd-mini)
-target_link_libraries(dbus-launch libsystemd-mini)
-if(NOT WIN32)
+	add_executable(test-broker
+		"test/dbus/test-broker.c"
+		"test/dbus/util-broker.c"
+	)
+	target_link_libraries(test-broker libsystemd-mini)
 	target_link_libraries(test-broker pthread)
 	target_link_libraries(dbus-launch pthread)
 endif()
+
+target_link_libraries(dbus-launch libsystemd-mini)
 
 add_subdirectory("libuv-1.44.1")
 
@@ -355,3 +350,11 @@ add_executable(tcp-echo
 )
 
 target_link_libraries(tcp-echo uv_a)
+
+add_executable(test-socket
+	"src/dbus/test-socket.c"
+)
+target_link_libraries(test-socket libbus libcdvar libcrbtree libcutf8)
+if(WIN32)
+	target_link_libraries(test-socket libsystemd-mini ws2_32)
+endif()

@@ -18,6 +18,29 @@
 #include "util/dispatch.h"
 #include "util/error.h"
 
+#ifdef WIN32
+ /* Define an example conditional function that depends on the pQos field */
+int CALLBACK ConditionAcceptFunc(
+    LPWSABUF lpCallerId,
+    LPWSABUF lpCallerData,
+    LPQOS pQos,
+    LPQOS lpGQOS,
+    LPWSABUF lpCalleeId,
+    LPWSABUF lpCalleeData,
+    GROUP FAR* g,
+    DWORD_PTR dwCallbackData
+)
+{
+
+    if (pQos != NULL) {
+        RtlZeroMemory(pQos, sizeof(QOS));
+        return CF_ACCEPT;
+    }
+    else
+        return CF_REJECT;
+}
+#endif
+
 static int listener_dispatch(DispatchFile *file) {
         Listener *listener = c_container_of(file, Listener, socket_file);
         _c_cleanup_(peer_freep) Peer *peer = NULL;
@@ -27,19 +50,27 @@ static int listener_dispatch(DispatchFile *file) {
         if (!(dispatch_file_events(file) & EPOLLIN))
                 return 0;
 #ifdef WIN32
+        
         fd = accept(listener->socket_fd, NULL, NULL);
+        
+        fprintf(stderr, "windows accept %d, err %d, WSA err %d\n", fd, errno, WSAGetLastError());
 #else
         fd = accept4(listener->socket_fd, NULL, NULL, SOCK_CLOEXEC | SOCK_NONBLOCK);
 #endif
         if (fd < 0) {
                 if (errno == EAGAIN) {
-                        /*
-                         * EAGAIN implies there are no pending incoming
-                         * connections. Catch this, clear EPOLLIN and tell the
-                         * caller about it.
-                         */
-                        dispatch_file_clear(&listener->socket_file, EPOLLIN);
-                        return 0;
+                    /*
+                     * EAGAIN implies there are no pending incoming
+                     * connections. Catch this, clear EPOLLIN and tell the
+                     * caller about it.
+                     */
+                    dispatch_file_clear(&listener->socket_file, EPOLLIN);
+                    return 0;
+#ifdef WIN32
+                } else if (errno == EINPROGRESS || WSAGetLastError() == WSAEWOULDBLOCK) {
+                    dispatch_file_clear(&listener->socket_file, EPOLLIN);
+                    return 0;
+#endif
                 } else {
                         /*
                          * The linux UDS layer does not return pending errors

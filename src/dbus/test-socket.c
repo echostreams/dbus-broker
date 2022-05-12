@@ -5,7 +5,11 @@
 #undef NDEBUG
 #include <c-stdaux.h>
 #include <stdlib.h>
+#if defined(__linux__)
 #include <sys/epoll.h>
+#else
+#include <wepoll/wepoll.h>
+#endif
 #include <sys/types.h>
 #include <sys/socket.h>
 #include "dbus/message.h"

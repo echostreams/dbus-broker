@@ -225,6 +225,16 @@ int broker_new(Broker **brokerp, const char *machine_id, int log_fd, int control
             fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(status));
             return -1;
         }
+        /*************************************************************/
+        /* Set socket to be nonblocking. All of the sockets for      */
+        /* the incoming connections will also be nonblocking since   */
+        /* they will inherit that state from the listening socket.   */
+        /*************************************************************/
+        u_long iMode = 1;
+        status = ioctlsocket(listener_fd, FIONBIO, &iMode);
+        if (status != NO_ERROR) {
+            printf("ioctlsocket failed with error: %ld\n", status);
+        }
 
         r = bind(listener_fd, res->ai_addr, res->ai_addrlen);
         c_assert(r >= 0);

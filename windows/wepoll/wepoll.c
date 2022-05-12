@@ -1228,6 +1228,8 @@ static inline int port__poll(port_state_t* port_state,
         &completion_count,
         timeout,
         FALSE);
+    
+    //printf("[wepoll] GetQueuedCompletionStatusEx returns %d, errno: %d\n", r, GetLastError());
 
     EnterCriticalSection(&port_state->lock);
 
