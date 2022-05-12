@@ -89,7 +89,7 @@ int dispatch_file_init(DispatchFile *file,
 
         c_assert(!(mask & EPOLLET));
         c_assert(!(events & ~mask));
-
+        fprintf(stderr, "dispatch_file_init[%d]\n", fd);
         r = epoll_ctl(ctx->epoll_fd,
                       EPOLL_CTL_ADD,
                       fd,

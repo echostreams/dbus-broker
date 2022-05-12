@@ -56,6 +56,68 @@ extern char* secure_getenv(const char* name);
 
 #define EREMOTEIO       121 /* Remote I/O error */
 
+int sigismember(sigset_t* set, int _sig)
+{
+    unsigned long sig = _sig - 1;
+    if (_NSIG_WORDS == 1)
+        return 1 & (set->sig[0] >> sig);
+    else
+        return 1 & (set->sig[sig / _NSIG_BPW] >> (sig % _NSIG_BPW));
+}
+
+int sigdelset(sigset_t* set, int _sig)
+{
+    unsigned long sig = _sig - 1;
+    if (_NSIG_WORDS == 1)
+        set->sig[0] &= ~(1UL << sig);
+    else
+        set->sig[sig / _NSIG_BPW] &= ~(1UL << (sig % _NSIG_BPW));
+    return 0;
+}
+
+int sigisemptyset(sigset_t* set)
+{
+    switch (_NSIG_WORDS) {
+    case 4:
+        return (set->sig[3] | set->sig[2] |
+            set->sig[1] | set->sig[0]) == 0;
+    case 2:
+        return (set->sig[1] | set->sig[0]) == 0;
+    case 1:
+        return set->sig[0] == 0;
+    default:
+        //BUILD_BUG();
+        return 0;
+    }
+}
+
+static inline bool SIGNAL_VALID(int signo) {
+    return signo > 0 && signo < _NSIG;
+}
+
+int sigaddset(sigset_t* set, int _sig)
+{
+    unsigned long sig = _sig - 1;
+    set->sig[sig / _NSIG_BPW] |= 1 << (sig % _NSIG_BPW);
+    return 0;
+}
+
+int signal_is_blocked(int sig) {
+    /*
+    sigset_t ss;
+    int r;
+
+    r = pthread_sigmask(SIG_SETMASK, NULL, &ss);
+    if (r != 0)
+        return -r;
+
+    return RET_NERRNO(sigismember(&ss, sig));
+    */
+    return 1;
+}
+const char* signal_to_string(int signo) {
+    return "";
+}
 #endif
 
 #define DEFAULT_ACCURACY_USEC (250 * USEC_PER_MSEC)
@@ -774,6 +836,7 @@ static sd_event_source* source_free(sd_event_source* s) {
                 bool sent = false;
 
                 if (s->child.pidfd >= 0) {
+#if defined (__linux__)
                     if (pidfd_send_signal(s->child.pidfd, SIGKILL, NULL, 0) < 0) {
                         if (errno == ESRCH) /* Already dead */
                             sent = true;
@@ -783,6 +846,7 @@ static sd_event_source* source_free(sd_event_source* s) {
                     }
                     else
                         sent = true;
+#endif
                 }
 
                 if (!sent)
@@ -796,7 +860,9 @@ static sd_event_source* source_free(sd_event_source* s) {
                 siginfo_t si = { 0 };
 
                 /* Reap the child if we can */
+#if defined(__linux__)
                 (void)waitid(P_PID, s->child.pid, &si, WEXITED);
+#endif
             }
         }
 
@@ -2013,6 +2079,7 @@ _public_ int sd_event_add_child(
      * pin the PID, and make regular waitid() handling race-free. */
 
     if (shall_use_pidfd()) {
+#if defined(__linux__)
         s->child.pidfd = pidfd_open(s->child.pid, 0);
         if (s->child.pidfd < 0) {
             /* Propagate errors unless the syscall is not supported or blocked */
@@ -2021,6 +2088,7 @@ _public_ int sd_event_add_child(
         }
         else
             s->child.pidfd_owned = true; /* If we allocate the pidfd we own it by default */
+#endif
     }
     else
         s->child.pidfd = -1;
@@ -2070,9 +2138,10 @@ static int process_pidfd(sd_event* e, sd_event_source* s, uint32_t revents) {
         return 0;
 
     zero(s->child.siginfo);
+#if defined(__linux__)
     if (waitid(P_PID, s->child.pid, &s->child.siginfo, WNOHANG | WNOWAIT | s->child.options) < 0)
         return -errno;
-
+#endif
     if (s->child.siginfo.si_pid == 0)
         return 0;
 
@@ -2565,8 +2634,11 @@ static int arm_watchdog(sd_event* e) {
      * kernel to disable it. */
     if (its.it_value.tv_sec == 0 && its.it_value.tv_nsec == 0)
         its.it_value.tv_nsec = 1;
-
+#if defined(__linux__)
     return RET_NERRNO(timerfd_settime(e->watchdog_fd, TFD_TIMER_ABSTIME, &its, NULL));
+#else
+    return 0;
+#endif
 }
 
 static int process_watchdog(sd_event* e) {
@@ -2729,8 +2801,10 @@ static int source_dispatch(sd_event_source* s) {
 #endif
         /* Now, reap the PID for good. */
         if (zombie) {
+#if defined (__linux__)
             (void)waitid(P_PID, s->child.pid, &s->child.siginfo, WNOHANG | WEXITED);
             s->child.waited = true;
+#endif
         }
 
         break;
@@ -2916,9 +2990,10 @@ static int event_arm_timer(
             return 0;
 
         /* disarm */
+#if defined(__linux__)
         if (timerfd_settime(d->fd, TFD_TIMER_ABSTIME, &its, NULL) < 0)
             return -errno;
-
+#endif
         d->next = USEC_INFINITY;
         return 0;
     }
@@ -2940,10 +3015,10 @@ static int event_arm_timer(
     }
     else
         timespec_store(&its.it_value, t);
-
+#if defined(__linux__)
     if (timerfd_settime(d->fd, TFD_TIMER_ABSTIME, &its, NULL) < 0)
         return -errno;
-
+#endif
     d->next = t;
     return 0;
 }
@@ -3047,10 +3122,11 @@ static int process_child(sd_event* e, int64_t threshold, int64_t* ret_min_priori
             continue;
 
         zero(s->child.siginfo);
+#if defined(__linux__)
         if (waitid(P_PID, s->child.pid, &s->child.siginfo,
             WNOHANG | (s->child.options & WEXITED ? WNOWAIT : 0) | s->child.options) < 0)
             return negative_errno();
-
+#endif
         if (s->child.siginfo.si_pid != 0) {
             bool zombie = IN_SET(s->child.siginfo.si_code, CLD_EXITED, CLD_KILLED, CLD_DUMPED);
 
@@ -3064,7 +3140,9 @@ static int process_child(sd_event* e, int64_t threshold, int64_t* ret_min_priori
                  * benefit in leaving it queued */
 
                 assert(s->child.options & (WSTOPPED | WCONTINUED));
+#if defined(__linux__)
                 (void)waitid(P_PID, s->child.pid, &s->child.siginfo, WNOHANG | (s->child.options & (WSTOPPED | WCONTINUED)));
+#endif
             }
 
             r = source_set_pending(s, true);

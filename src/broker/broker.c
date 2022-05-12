@@ -142,7 +142,7 @@ int broker_new(Broker **brokerp, const char *machine_id, int log_fd, int control
         broker->signals_fd = signalfd(-1, &sigmask, SFD_CLOEXEC | SFD_NONBLOCK);
         if (broker->signals_fd < 0)
                 return error_origin(-errno);
-#endif
+
 
         r = dispatch_file_init(&broker->signals_file,
                                &broker->dispatcher,
@@ -154,10 +154,110 @@ int broker_new(Broker **brokerp, const char *machine_id, int log_fd, int control
                 return error_fold(r);
 
         dispatch_file_select(&broker->signals_file, EPOLLIN);
+#endif
 
         r = controller_init(&broker->controller, broker, controller_fd);
         if (r)
                 return error_fold(r);
+
+#ifdef WIN32
+        ControllerListener* listener;
+        PolicyRegistry* policy = NULL;
+        r = policy_registry_new(&policy, broker->bus.seclabel);
+        if (r)
+            return error_fold(r);
+        const char policy_sig[] = 
+                "("
+                 "a(u(bta(btbs)a(btssssuutt)a(btssssuutt)))"
+                 "a(buu(bta(btbs)a(btssssuutt)a(btssssuutt)))"
+                 "a(ss)"
+                 "b"
+                ")";
+        CDVarType* type = NULL;
+        size_t n_data;
+        void* data;
+
+        r = c_dvar_type_new_from_string(&type, policy_sig);
+        c_assert(!r);
+        _c_cleanup_(c_dvar_freep) CDVar* var = NULL;
+        r = c_dvar_new(&var);
+        c_assert(!r);
+
+        c_dvar_begin_write(var, (__BYTE_ORDER == __BIG_ENDIAN), c_dvar_type_v, 1);
+
+        c_dvar_write(var, "<([(u(", type, UINT32_C(-1));
+        c_dvar_write(var, "bt", UINT32_C(1), UINT64_C(1));
+        c_dvar_write(var, "[(btbs)]", UINT32_C(1), UINT64_C(1), true, "");
+        c_dvar_write(var, "[(btssssuutt)]", UINT32_C(1), UINT64_C(1), "", "", "", "", 0, 0, UINT64_C(0), UINT64_MAX);
+        c_dvar_write(var, "[(btssssuutt)]))]", UINT32_C(1), UINT64_C(1), "", "", "", "", 0, 0, UINT64_C(0), UINT64_MAX);
+        c_dvar_write(var, "[]");
+        c_dvar_write(var, "[]");
+        c_dvar_write(var, "b)>", UINT32_C(0));
+
+        r = c_dvar_end_write(var, &data, &n_data);
+        c_assert(!r);
+
+        c_dvar_begin_read(var, c_dvar_is_big_endian(var), c_dvar_type_v, 1, data, n_data);
+
+        policy_registry_import(policy, var);
+
+        /*
+         * Create listener socket, let the kernel pick a random address
+         * and remember it in @broker. Spawn a thread, which will then
+         * run and babysit the broker.
+         */
+        SOCKET listener_fd = socket(AF_INET, SOCK_STREAM, 0);
+        c_assert(listener_fd >= 0);
+
+        struct addrinfo hints, * res;
+        // Before using hint you have to make sure that the data structure is empty 
+        memset(&hints, 0, sizeof(hints));
+        // Set the attribute for hint
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_STREAM; // TCP Socket SOCK_DGRAM 
+        hints.ai_protocol = IPPROTO_TCP;
+        hints.ai_flags = AI_PASSIVE;
+
+        // Fill the res data structure and make sure that the results make sense. 
+        int status = getaddrinfo(NULL, "8080", &hints, &res);
+        if (status != 0)
+        {
+            fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(status));
+            return -1;
+        }
+
+        r = bind(listener_fd, res->ai_addr, res->ai_addrlen);
+        c_assert(r >= 0);
+
+        char bindaddr[64];
+        uint32_t a;
+        struct sockaddr_in* sa = (struct sockaddr_in*)res->ai_addr;
+        a = be32toh(sa->sin_addr.s_addr);
+
+        
+        r = sprintf(bindaddr,
+                "%u.%u.%u.%u:%u",
+                a >> 24, (a >> 16) & 0xFF, (a >> 8) & 0xFF, a & 0xFF,
+                be16toh(sa->sin_port));
+
+        printf("I am now accepting connections at %s ...\n", bindaddr);
+        freeaddrinfo(res);
+
+        r = listen(listener_fd, 256);
+        c_assert(r >= 0);
+
+        controller_add_listener(&broker->controller,
+            &listener,
+            "/org/bus1/DBus/Listener/",
+            listener_fd,
+            policy);
+
+        r = c_dvar_end_read(var);
+        c_assert(!r);
+        free(data);
+        
+
+#endif // WIN32
 
         *brokerp = broker;
         broker = NULL;

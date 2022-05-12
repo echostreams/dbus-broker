@@ -871,7 +871,6 @@ static int socket_dispatch_write(Socket *socket) {
         n_msgs = sendmmsg(socket->fd, msgs, n_msgs, MSG_DONTWAIT | MSG_NOSIGNAL);
 
 #else
-        DWORD bytes;
         int ret;
         for (i = 0; i < n_msgs; i++) {
                 LPWSABUF buf = (LPWSABUF)malloc(sizeof(WSABUF) * msgs[i].msg_hdr.msg_iovlen);
@@ -879,7 +878,12 @@ static int socket_dispatch_write(Socket *socket) {
                         buf[j].buf = msgs[i].msg_hdr.msg_iov[j].iov_base;
                         buf[j].len = msgs[i].msg_hdr.msg_iov[j].iov_len;
                 }
-                ret = WSASend(socket->fd, buf, msgs[i].msg_hdr.msg_iovlen, &bytes, 0, NULL, NULL);
+                DWORD bytes_sent = 0;
+                ret = WSASend(socket->fd, buf, msgs[i].msg_hdr.msg_iovlen, &bytes_sent, 0, NULL, NULL);
+                fprintf(stderr, "WSASend: msgs[%d] %d == %d\n", i, bytes_sent, msgs[i].msg_len);
+                //The msg_len field is used to return the number of bytes sent from the message in msg_hdr
+                msgs[i].msg_len = bytes_sent;
+                
         }
 
 #endif

@@ -63,7 +63,7 @@ struct signalfd_siginfo {
 #define _NSIG_WORDS	(_NSIG / _NSIG_BPW)
 #define __user
 typedef struct {
-	unsigned long sig[_NSIG_WORDS];
+	unsigned long int sig[_NSIG_WORDS];
 } sigset_t;
 
 typedef union sigval {

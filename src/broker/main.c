@@ -18,6 +18,8 @@
 #include "util/selinux.h"
 #include "util/string.h"
 
+#include <c-dvar-type.h>
+
 bool main_arg_audit = false;
 int main_arg_controller = 3;
 int main_arg_log = -1;
@@ -29,11 +31,208 @@ uint64_t main_arg_max_objects = 16 * 1024 * 1024;
 
 #ifdef WIN32
 #define program_invocation_name (__argv && __argv[0] ? __argv[0] : "?")
+#include <Windows.h>
+#include <TlHelp32.h>
+#include <stdio.h>
+
+// Find a process with a given id in a snapshot
+BOOL FindProcessID(HANDLE snap, DWORD id, LPPROCESSENTRY32 ppe)
+{
+    BOOL res;
+    ppe->dwSize = sizeof(PROCESSENTRY32); // (mandatory)
+    res = Process32First(snap, ppe);
+    while (res) {
+        if (ppe->th32ProcessID == id) {
+            return TRUE;
+        }
+        res = Process32Next(snap, ppe);
+    }
+    return FALSE;
+}
+
+// Get the parent process id of the current process
+BOOL GetParentProcessId(DWORD* parent_process_id)
+{
+    HANDLE hSnap;
+    PROCESSENTRY32 pe;
+    DWORD current_pid = GetCurrentProcessId();
+
+    // Take a snapshot of all Windows processes
+    hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (INVALID_HANDLE_VALUE == hSnap) {
+        return FALSE;
+    }
+
+    // Find the current process in the snapshot
+    if (!FindProcessID(hSnap, current_pid, &pe)) {
+        return FALSE;
+    }
+
+    // Close the snapshot
+    if (!CloseHandle(hSnap)) {
+        return FALSE;
+    }
+
+    *parent_process_id = pe.th32ParentProcessID;
+    return TRUE;
+}
+
+SOCKET ConvertProcessSocket(SOCKET oldsocket, DWORD source_pid)
+{
+    HANDLE source_handle = OpenProcess(PROCESS_ALL_ACCESS,
+        FALSE, source_pid);
+    HANDLE newhandle;
+    if (!DuplicateHandle(source_handle, (HANDLE)oldsocket,
+        GetCurrentProcess(), &newhandle, 0, FALSE,
+        DUPLICATE_CLOSE_SOURCE | DUPLICATE_SAME_ACCESS))
+    {
+        fprintf(stderr, "Could not duplicate handle\n");
+        CloseHandle(source_handle);
+        return INVALID_SOCKET;
+    }
+    else {
+        fprintf(stderr, "DuplicateHandle(%d -> %d)\n", oldsocket, newhandle);
+    }
+    CloseHandle(source_handle);
+    return (SOCKET)newhandle;
+}
+
+int policy_c_dvar_test()
+{
+#ifdef WIN32
+
+    /* D-Bus type 'a(btbs)' */
+#define POLICY_TYPE_a_btbs              \
+        C_DVAR_T_ARRAY(                 \
+                C_DVAR_T_TUPLE4(        \
+                        C_DVAR_T_b,     \
+                        C_DVAR_T_t,     \
+                        C_DVAR_T_b,     \
+                        C_DVAR_T_s      \
+                )                       \
+        )
+
+/* D-Bus type 'a(btssssuutt)' */
+#define POLICY_TYPE_a_btssssuutt        \
+        C_DVAR_T_ARRAY(                 \
+                C_DVAR_T_TUPLE10(       \
+                        C_DVAR_T_b,     \
+                        C_DVAR_T_t,     \
+                        C_DVAR_T_s,     \
+                        C_DVAR_T_s,     \
+                        C_DVAR_T_s,     \
+                        C_DVAR_T_s,     \
+                        C_DVAR_T_u,     \
+                        C_DVAR_T_u,     \
+                        C_DVAR_T_t,     \
+                        C_DVAR_T_t      \
+                )                       \
+        )
+
+/* D-Bus type that contains an entire policy dump */
+#define POLICY_TYPE                                                             \
+        C_DVAR_T_TUPLE4(                                                        \
+                C_DVAR_T_ARRAY(                                                 \
+                        C_DVAR_T_TUPLE2(                                        \
+                                C_DVAR_T_u,                                     \
+                                C_DVAR_T_TUPLE5(                                \
+                                        C_DVAR_T_b,                             \
+                                        C_DVAR_T_t,                             \
+                                        POLICY_TYPE_a_btbs,                     \
+                                        POLICY_TYPE_a_btssssuutt,               \
+                                        POLICY_TYPE_a_btssssuutt                \
+                                )                                               \
+                        )                                                       \
+                ),                                                              \
+                C_DVAR_T_ARRAY(                                                 \
+                        C_DVAR_T_TUPLE4(                                        \
+                                C_DVAR_T_b,                                     \
+                                C_DVAR_T_u,                                     \
+                                C_DVAR_T_u,                                     \
+                                C_DVAR_T_TUPLE5(                                \
+                                        C_DVAR_T_b,                             \
+                                        C_DVAR_T_t,                             \
+                                        POLICY_TYPE_a_btbs,                     \
+                                        POLICY_TYPE_a_btssssuutt,               \
+                                        POLICY_TYPE_a_btssssuutt                \
+                                )                                               \
+                        )                                                       \
+                ),                                                              \
+                C_DVAR_T_ARRAY(                                                 \
+                        C_DVAR_T_TUPLE2(                                        \
+                                C_DVAR_T_s,                                     \
+                                C_DVAR_T_s                                      \
+                        )                                                       \
+                ),                                                              \
+                C_DVAR_T_b                                                      \
+        )
+
+    //static const CDVarType policy_type[] = {
+    //    C_DVAR_T_INIT(POLICY_TYPE)
+    //};
+
+    int r;
+    ControllerListener* listener;
+    PolicyRegistry* policy = NULL;
+    r = policy_registry_new(&policy, /*broker->bus.seclabel*/"");
+    if (r)
+        return error_fold(r);
+    /*
+    const char policy_sig[] =
+        "<("
+        "a(u(bta(btbs)a(btssssuutt)a(btssssuutt)))"
+        "a(buu(bta(btbs)a(btssssuutt)a(btssssuutt)))"
+        "a(ss)"
+        "b"
+        ")>";
+    */
+    //const char policy_sig[] = "v";
+
+    //CDVarType* type = NULL;
+    size_t n_data;
+    void* data;
+
+    //r = c_dvar_type_new_from_string(&type, policy_sig);
+    //c_assert(!r);
+    _c_cleanup_(c_dvar_freep) CDVar* var = NULL;
+    r = c_dvar_new(&var);
+    c_assert(!r);
+    c_dvar_begin_write(var, (__BYTE_ORDER == __BIG_ENDIAN), c_dvar_type_v, 1);
+
+    c_dvar_write(var, "<([(u(", (const CDVarType[]) { C_DVAR_T_INIT(POLICY_TYPE) }, UINT32_C(-1));
+    c_dvar_write(var, "bt", UINT32_C(1), UINT64_C(1));
+    c_dvar_write(var, "[(btbs)]", UINT32_C(1), UINT64_C(1), true, "");
+    c_dvar_write(var, "[(btssssuutt)]", UINT32_C(1), UINT64_C(1), "", "", "", "", 0, 0, UINT64_C(0), UINT64_MAX);
+    c_dvar_write(var, "[(btssssuutt)]))]", UINT32_C(1), UINT64_C(1), "", "", "", "", 0, 0, UINT64_C(0), UINT64_MAX);
+    c_dvar_write(var, "[]");
+    c_dvar_write(var, "[]");
+    c_dvar_write(var, "b)>", UINT32_C(0));
+
+    r = c_dvar_end_write(var, &data, &n_data);
+    c_assert(!r);
+
+    c_dvar_begin_read(var, c_dvar_is_big_endian(var), c_dvar_type_v, 1, data, n_data);
+
+    policy_registry_import(policy, var);    
+
+    //controller_add_listener(&broker->controller,
+    //    &listener,
+    //    "/org/bus1/DBus/Listener/",
+    //    listener_fd,
+    //    policy);
+
+    r = c_dvar_end_read(var);
+    c_assert(!r);
+    free(data);
+
+#endif // WIN32
+}
+
 #endif
 
 static void help(void) {
         printf("%s [GLOBALS...] ...\n\n"
-               "Linux D-Bus Message Broker\n\n"
+               "Linux/Windows D-Bus Message Broker\n\n"
                "  -h --help                     Show this help\n"
                "     --version                  Show package version\n"
                "     --audit                    Log to the audit subsystem\n"
@@ -106,6 +305,19 @@ static int parse_argv(int argc, char *argv[]) {
                         }
 
                         main_arg_controller = vul;
+
+#ifdef WIN32
+                        DWORD parentPID;
+                        if (!GetParentProcessId(&parentPID))
+                        {
+                            fprintf(stderr, "%s: could not get parent process id\n", program_invocation_name);
+                            return MAIN_FAILED;
+                        }
+                        main_arg_controller = (int)ConvertProcessSocket((SOCKET)vul, parentPID);
+#else
+                        main_arg_controller = vul;
+#endif
+
                         break;
                 }
 
@@ -202,7 +414,7 @@ static int parse_argv(int argc, char *argv[]) {
                 r = 0;
 #endif
                 n = sizeof(v2);
-                r = r ?: getsockopt(main_arg_log, SOL_SOCKET, SO_TYPE, &v2, &n);
+                r = r ? r : getsockopt(main_arg_log, SOL_SOCKET, SO_TYPE, &v2, &n);
 
                 if (r < 0) {
                         if (errno != EBADF && errno != ENOTSOCK)
@@ -225,10 +437,15 @@ static int parse_argv(int argc, char *argv[]) {
                 n = sizeof(v1);
                 r = getsockopt(main_arg_controller, SOL_SOCKET, SO_DOMAIN, &v1, &n);
 #else
-                r = 0;
+                WSAPROTOCOL_INFOW Info;
+                INT InfoSize = sizeof(Info);
+                r = getsockopt(main_arg_controller, SOL_SOCKET, SO_PROTOCOL_INFO, (PCHAR)&Info, &InfoSize);
+                v1 = Info.iAddressFamily;
+                fprintf(stderr, "controller socket family: %d %d\n", v1, r);
 #endif
                 n = sizeof(v2);
                 r = r ? r : getsockopt(main_arg_controller, SOL_SOCKET, SO_TYPE, &v2, &n);
+                fprintf(stderr, "controller socket type: %d %d\n", v2, r);
 
                 if (r < 0) {
 #ifdef WIN32
@@ -246,7 +463,13 @@ static int parse_argv(int argc, char *argv[]) {
 
                         fprintf(stderr, "%s: controller file-descriptor not a socket -- '%d'\n", program_invocation_name, main_arg_controller);
                         return MAIN_FAILED;
-                } else if (v1 != AF_UNIX || v2 != SOCK_STREAM) {
+                } 
+#ifdef WIN32
+                else if (v1 != AF_INET || v2 != SOCK_STREAM)
+#else
+                else if (v1 != AF_UNIX || v2 != SOCK_STREAM) 
+#endif
+                {
                         fprintf(stderr, "%s: socket type of controller file-descriptor not supported -- '%d'\n", program_invocation_name, main_arg_controller);
                         return MAIN_FAILED;
                 }
@@ -294,6 +517,9 @@ static int run(void) {
 int main(int argc, char **argv) {
 
 #ifdef WIN32
+
+        policy_c_dvar_test();
+
         WSADATA wsaData;
         int iResult;
         // Initialize Winsock

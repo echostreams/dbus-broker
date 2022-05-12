@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 #pragma once
 
-#if defined (__linux__)
 
 #include <signal.h>
 
@@ -12,6 +11,7 @@ int reset_signal_mask(void);
 
 int sigaction_many_internal(const struct sigaction *sa, ...);
 
+#if defined(__linux__)
 #define ignore_signals(...)                                             \
         sigaction_many_internal(                                        \
                         &(const struct sigaction) {                     \
@@ -36,6 +36,8 @@ int sigaction_many_internal(const struct sigaction *sa, ...);
 int sigset_add_many(sigset_t *ss, ...);
 int sigprocmask_many(int how, sigset_t *old, ...);
 
+#endif
+
 const char *signal_to_string(int i) _const_;
 int signal_from_string(const char *s) _pure_;
 
@@ -54,10 +56,10 @@ static inline void block_signals_reset(sigset_t *ss) {
                 _t;                                                                \
         })
 
+
 static inline bool SIGNAL_VALID(int signo) {
         return signo > 0 && signo < _NSIG;
 }
-
 
 
 static inline const char* signal_to_string_with_check(int n) {
@@ -74,4 +76,3 @@ int signal_is_blocked(int sig);
 int pop_pending_signal_internal(int sig, ...);
 #define pop_pending_signal(...) pop_pending_signal_internal(__VA_ARGS__, -1)
 
-#endif

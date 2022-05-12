@@ -121,7 +121,11 @@ int error_slow_origin(int r, const char *function, const char *file, int line) {
         if (r < 0) {
                 tmp_errno = errno;
                 errno = -r;
+#ifdef WIN32
+                fprintf(stderr, "ERROR %s @ %s +%d: %s\n", function, file, line, strerror(errno));
+#else
                 fprintf(stderr, "ERROR %s @ %s +%d: %m\n", function, file, line);
+#endif
                 errno = tmp_errno;
         } else if (r > 0) {
                 fprintf(stderr, "ERROR %s @ %s +%d: Return code %d\n", function, file, line, r);

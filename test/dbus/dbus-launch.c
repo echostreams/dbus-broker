@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include "util-broker.h"
 
-
+void log_set_max_level(int);
 
 int main(int argc, char** argv)
 {
