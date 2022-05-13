@@ -1,8 +1,7 @@
-#include <stdint.h>
-#include <stdlib.h>
-
 #if defined(_WIN32) || defined(_WIN64)
 
+#include <stdint.h>
+#include <stdlib.h>
 #include <Windows.h>
 #include <sddl.h>
 
@@ -32,7 +31,7 @@ typedef std::unique_ptr<HANDLE, handle_delete> handle_unique_ptr;
 
 typedef uint32_t uid_t;
 
-BOOL GetUserSID(HANDLE token, PSID* sid)
+BOOL _GetUserSID(HANDLE token, PSID* sid)
 {
     if (
         token == nullptr || token == INVALID_HANDLE_VALUE
@@ -88,10 +87,10 @@ BOOL GetUserSID(HANDLE token, PSID* sid)
     return TRUE;
 }
 
-uid_t GetUID(HANDLE token)
+uid_t _GetUID(HANDLE token)
 {
     PSID sid = nullptr;
-    BOOL getSID = GetUserSID(token, &sid);
+    BOOL getSID = _GetUserSID(token, &sid);
     if (!getSID || !sid)
     {
         return -1;
@@ -111,9 +110,6 @@ uid_t GetUID(HANDLE token)
         ++p;
         ret = ::_wtoi(p);
     }
-
-    ::wprintf(L"SID: %s\n", stringSid);
-
     ::LocalFree(stringSid);
     return ret;
 }
@@ -122,46 +118,173 @@ uid_t GetUID(HANDLE token)
 extern "C" {
 #endif
 
-    uid_t getuid()
+uid_t getuid()
+{
+    HANDLE process = ::GetCurrentProcess();
+    handle_unique_ptr processPtr(process);
+    HANDLE token = nullptr;
+    BOOL openToken = ::OpenProcessToken(
+        process, TOKEN_READ | TOKEN_QUERY_SOURCE, &token);
+    if (!openToken)
     {
-        HANDLE process = ::GetCurrentProcess();
-        handle_unique_ptr processPtr(process);
-        HANDLE token = nullptr;
-        BOOL openToken = ::OpenProcessToken(
-            process, TOKEN_READ | TOKEN_QUERY_SOURCE, &token);
-        if (!openToken)
-        {
-            return -1;
-        }
-        handle_unique_ptr tokenPtr(token);
-        uid_t ret = GetUID(token);
-        return ret;
+        return -1;
     }
+    handle_unique_ptr tokenPtr(token);
+    uid_t ret = _GetUID(token);
+    return ret;
+}
 
-    uid_t geteuid()
+uid_t geteuid()
+{
+    HANDLE process = ::GetCurrentProcess();
+    HANDLE thread = ::GetCurrentThread();
+    HANDLE token = nullptr;
+    BOOL openToken = ::OpenThreadToken(
+        thread, TOKEN_READ | TOKEN_QUERY_SOURCE, FALSE, &token);
+    if (!openToken && ::GetLastError() == ERROR_NO_TOKEN)
     {
-        HANDLE process = ::GetCurrentProcess();
-        HANDLE thread = ::GetCurrentThread();
-        HANDLE token = nullptr;
-        BOOL openToken = ::OpenThreadToken(
-            thread, TOKEN_READ | TOKEN_QUERY_SOURCE, FALSE, &token);
+        openToken = ::OpenThreadToken(
+            thread, TOKEN_READ | TOKEN_QUERY_SOURCE, TRUE, &token);
         if (!openToken && ::GetLastError() == ERROR_NO_TOKEN)
         {
-            openToken = ::OpenThreadToken(
-                thread, TOKEN_READ | TOKEN_QUERY_SOURCE, TRUE, &token);
-            if (!openToken && ::GetLastError() == ERROR_NO_TOKEN)
-            {
-                openToken = ::OpenProcessToken(
-                    process, TOKEN_READ | TOKEN_QUERY_SOURCE, &token);
-            }
+            openToken = ::OpenProcessToken(
+                process, TOKEN_READ | TOKEN_QUERY_SOURCE, &token);
         }
-        if (!openToken)
+    }
+    if (!openToken)
+    {
+        return -1;
+    }
+    handle_unique_ptr tokenPtr(token);
+    uid_t ret = _GetUID(token);
+    return ret;
+}
+
+static BOOL
+is_winxp_sp3_or_lower(void)
+{
+    OSVERSIONINFOEX osvi;
+    DWORDLONG dwlConditionMask = 0;
+    int op = VER_LESS_EQUAL;
+
+    // Initialize the OSVERSIONINFOEX structure.
+
+    ZeroMemory(&osvi, sizeof(OSVERSIONINFOEX));
+    osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
+    osvi.dwMajorVersion = 5;
+    osvi.dwMinorVersion = 1;
+    osvi.wServicePackMajor = 3;
+    osvi.wServicePackMinor = 0;
+
+    // Initialize the condition mask.
+
+    VER_SET_CONDITION(dwlConditionMask, VER_MAJORVERSION, op);
+    VER_SET_CONDITION(dwlConditionMask, VER_MINORVERSION, op);
+    VER_SET_CONDITION(dwlConditionMask, VER_SERVICEPACKMAJOR, op);
+    VER_SET_CONDITION(dwlConditionMask, VER_SERVICEPACKMINOR, op);
+
+    // Perform the test.
+
+    return VerifyVersionInfo(
+        &osvi,
+        VER_MAJORVERSION | VER_MINORVERSION |
+        VER_SERVICEPACKMAJOR | VER_SERVICEPACKMINOR,
+        dwlConditionMask);
+}
+
+void
+_dbus_win_warn_win_error(const char* message,
+    unsigned long code)
+{
+    //DBusError error;
+
+    //dbus_error_init(&error);
+    //_dbus_win_set_error_from_win_error(&error, code);
+    char* msg;
+
+    /* As we want the English message, use the A API */
+    FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER |
+        FORMAT_MESSAGE_IGNORE_INSERTS |
+        FORMAT_MESSAGE_FROM_SYSTEM,
+        NULL, code, MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US),
+        (LPSTR)&msg, 0, NULL);
+    if (msg)
+    {
+        //dbus_set_error(error, "win32.error", "%s", msg);
+        printf("%s: %s\n", message, msg);
+        LocalFree(msg);
+    }
+    else {
+        //dbus_set_error(error, "win32.error", "Unknown error code %d or FormatMessage failed", code);
+        printf("%s: Unknown error code %d or FormatMessage failed\n", message, code);
+    }
+    //_dbus_warn("%s: %s", message, error.message);
+    //dbus_error_free(&error);
+}
+
+
+
+    /** Gets our SID
+     * @param sid points to sid buffer, need to be freed with LocalFree()
+     * @param process_id the process id for which the sid should be returned (use 0 for current process)
+     * @returns process sid
+     */
+     /** A process ID */
+    typedef unsigned long dbus_pid_t;
+    typedef uint32_t dbus_bool_t;
+    #define _dbus_verbose printf
+
+    dbus_bool_t
+        _dbus_getsid(char** sid, dbus_pid_t process_id)
+    {
+        HANDLE process_token = INVALID_HANDLE_VALUE;
+        TOKEN_USER* token_user = NULL;
+        DWORD n;
+        PSID psid;
+        int retval = FALSE;
+
+        HANDLE process_handle;
+        if (process_id == 0)
+            process_handle = GetCurrentProcess();
+        else if (is_winxp_sp3_or_lower())
+            process_handle = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, process_id);
+        else
+            process_handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process_id);
+
+        if (!OpenProcessToken(process_handle, TOKEN_QUERY, &process_token))
         {
-            return -1;
+            _dbus_win_warn_win_error("OpenProcessToken failed", GetLastError());
+            goto failed;
         }
-        handle_unique_ptr tokenPtr(token);
-        uid_t ret = GetUID(token);
-        return ret;
+        if ((!GetTokenInformation(process_token, TokenUser, NULL, 0, &n)
+            && GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+            || (token_user = (TOKEN_USER*)_malloca(n)) == NULL
+            || !GetTokenInformation(process_token, TokenUser, token_user, n, &n))
+        {
+            _dbus_win_warn_win_error("GetTokenInformation failed", GetLastError());
+            goto failed;
+        }
+        psid = token_user->User.Sid;
+        if (!IsValidSid(psid))
+        {
+            _dbus_verbose("%s invalid sid\n", __FUNCTION__);
+            goto failed;
+        }
+        if (!ConvertSidToStringSidA(psid, sid))
+        {
+            _dbus_verbose("%s invalid sid\n", __FUNCTION__);
+            goto failed;
+        }
+        //okay:
+        retval = TRUE;
+
+    failed:
+        CloseHandle(process_handle);
+        if (process_token != INVALID_HANDLE_VALUE)
+            CloseHandle(process_token);
+
+        _dbus_verbose("_dbus_getsid() got '%s' and returns %d\n", *sid, retval);
+        return retval;
     }
 
     char*
@@ -196,6 +319,7 @@ extern "C" {
 }
 #endif
 
+
 #ifdef GETUID_TEST
 int main()
 {
@@ -205,11 +329,8 @@ int main()
         << "uid: " << std::setbase(10) << uid << std::endl
         << "euid: " << std::setbase(10) << euid << std::endl
         << std::endl;
-    
     return EXIT_SUCCESS;
 }
 #endif
 
-
-
-#endif // WIN32 || WIN64
+#endif

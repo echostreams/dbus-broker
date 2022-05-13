@@ -203,12 +203,26 @@ static void sasl_server_handle_data(SASLServer *sasl, const char *input, size_t 
          * which case we rely on the kernel to verify its correctness.
          */
         if (n_input) {
+
+#ifdef WIN32
+            char* win_sid;
+            if (_dbus_getsid(&win_sid, 0))
+            {
+                size_t n = strlen(win_sid);
+                char* sid_hex = malloc(n * 2 + 1);
+                string_to_hex(win_sid, n, sid_hex);
+                if (n_input != 2 * n || memcmp(input, sid_hex, 2 * n))
+                    failed = true;
+            }
+            LocalFree(win_sid);
+#else
                 n = snprintf(uidbuf, sizeof(uidbuf), "%" PRIu32, sasl->uid);
                 c_assert(n >= 0 && (size_t)n < sizeof(uidbuf));
 
                 string_to_hex(uidbuf, n, hexbuf);
                 if (n_input != 2 * (size_t)n || memcmp(input, hexbuf, 2 * n))
                         failed = true;
+#endif
         }
 
         if (failed) {

@@ -284,7 +284,6 @@ add_library(libsystemd-mini
 	"windows/asprintf.c"
 	"windows/strndup.c"
 	"windows/getuid.cpp"
-	"windows/wepoll/getuid.cpp"
 	"windows/mmap.c"
 	"windows/win_clock_gettime.c"
 	"windows/socket.c"
