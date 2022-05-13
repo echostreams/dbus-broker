@@ -33,10 +33,22 @@ extern "C" {
 typedef struct CRBNode CRBNode;
 typedef struct CRBTree CRBTree;
 
+
+
 /* implementation detail */
+#ifdef _WIN64
+
+#define C_RBNODE_RED                    (0x1ULL)
+#define C_RBNODE_ROOT                   (0x2ULL)
+#define C_RBNODE_FLAG_MASK              (0x3ULL)
+
+#else
+
 #define C_RBNODE_RED                    (0x1UL)
 #define C_RBNODE_ROOT                   (0x2UL)
 #define C_RBNODE_FLAG_MASK              (0x3UL)
+
+#endif
 
 /**
  * struct CRBNode - Node of a Red-Black Tree

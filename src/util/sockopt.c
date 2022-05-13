@@ -16,6 +16,7 @@
 #include "util/sockopt.h"
 
 int sockopt_get_peersec(int fd, char **labelp, size_t *lenp) {
+#if defined(__linux__)
         _c_cleanup_(c_freep) char *label = NULL;
         socklen_t len = 1023;
         char *l;
@@ -31,7 +32,7 @@ int sockopt_get_peersec(int fd, char **labelp, size_t *lenp) {
         label = malloc(len + 1);
         if (!label)
                 return error_origin(-ENOMEM);
-#if defined(__linux__)
+
         for (;;) {
                 r = getsockopt(fd, SOL_SOCKET, SO_PEERSEC, label, &len);
                 if (r >= 0) {
@@ -58,6 +59,12 @@ int sockopt_get_peersec(int fd, char **labelp, size_t *lenp) {
 
         *labelp = l;
         *lenp = strlen(l);
+
+#else
+    const char* unconfined = "unconfined";
+    *labelp = _strdup(unconfined);
+    *lenp = strlen(unconfined);
+
 #endif
 
         return 0;

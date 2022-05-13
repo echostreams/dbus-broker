@@ -54,6 +54,13 @@ static int listener_dispatch(DispatchFile *file) {
         fd = accept(listener->socket_fd, NULL, NULL);
         
         fprintf(stderr, "windows accept %d, err %d, WSA err %d\n", fd, errno, WSAGetLastError());
+        if (fd != SOCKET_ERROR) {
+            int iResult;
+            u_long iMode = 1;
+            iResult = ioctlsocket(fd, FIONBIO, &iMode);
+            if (iResult != NO_ERROR)
+                printf("ioctlsocket failed with error: %ld\n", iResult);
+        }
 #else
         fd = accept4(listener->socket_fd, NULL, NULL, SOCK_CLOEXEC | SOCK_NONBLOCK);
 #endif
@@ -67,7 +74,7 @@ static int listener_dispatch(DispatchFile *file) {
                     dispatch_file_clear(&listener->socket_file, EPOLLIN);
                     return 0;
 #ifdef WIN32
-                } else if (errno == EINPROGRESS || WSAGetLastError() == WSAEWOULDBLOCK) {
+                } else if (errno == EINPROGRESS || WSAGetLastError() == WSAEWOULDBLOCK || errno == WAIT_TIMEOUT) {
                     dispatch_file_clear(&listener->socket_file, EPOLLIN);
                     return 0;
 #endif

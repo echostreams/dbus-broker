@@ -14,6 +14,10 @@
 #include "util/error.h"
 #include "util/selinux.h"
 
+#ifdef WIN32
+extern char* strchrnul(const char* s, int c);
+#endif
+
 /* D-Bus type 'a(btbs)' */
 #define POLICY_TYPE_a_btbs              \
         C_DVAR_T_ARRAY(                 \

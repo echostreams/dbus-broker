@@ -281,10 +281,18 @@ int peer_new_with_fd(Peer **peerp,
         r = getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &ucred, &socklen);
         if (r < 0)
                 return error_origin(-errno);
+
+#else
+        ucred.uid = getuid();
 #endif
+        printf("  [ucred] pid: %d, gid: %d, uid: %d\n", ucred.pid, ucred.gid, ucred.uid);
+
         r = user_registry_ref_user(&bus->users, &user, ucred.uid);
+        printf("       user_registry_ref_user => %d\n", r);
         if (r < 0)
                 return error_fold(r);
+
+        printf("  user.uid = %d\n", user->uid);
 
         r = sockopt_get_peersec(fd, &seclabel, &n_seclabel);
         if (r < 0)
@@ -297,6 +305,9 @@ int peer_new_with_fd(Peer **peerp,
         peer = calloc(1, sizeof(*peer));
         if (!peer)
                 return error_origin(-ENOMEM);
+
+        printf("    >>>>>>>>>>>>>>>>>>\n");
+
         *peer = (Peer)PEER_INIT(*peer);
 
         peer->bus = bus;
@@ -313,6 +324,9 @@ int peer_new_with_fd(Peer **peerp,
         r = user_charge(peer->user, &peer->charges[0], NULL, USER_SLOT_BYTES, sizeof(Peer));
         r = r ?: user_charge(peer->user, &peer->charges[1], NULL, USER_SLOT_FDS, 1);
         r = r ?: user_charge(peer->user, &peer->charges[2], NULL, USER_SLOT_OBJECTS, 1);
+
+        printf(">> peer_new_with_fd r=%d\n", r);
+
         if (r) {
                 if (r == USER_E_QUOTA)
                         return PEER_E_QUOTA;

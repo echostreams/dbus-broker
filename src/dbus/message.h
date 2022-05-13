@@ -98,6 +98,7 @@ struct Message {
                 .metadata = MESSAGE_METADATA_INIT,      \
         }
 
+#pragma pack(push, 1)
 struct MessageHeader {
         uint8_t endian;
         uint8_t type;
@@ -107,6 +108,7 @@ struct MessageHeader {
         uint32_t serial;
         uint32_t n_fields;
 } _c_packed_;
+#pragma pack(pop)
 
 int message_new_incoming(Message **messagep, MessageHeader header);
 int message_new_outgoing(Message **messagep, void *data, size_t n_data);

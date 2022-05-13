@@ -82,8 +82,14 @@ int broker_new(Broker **brokerp, const char *machine_id, int log_fd, int control
         broker->signals_file = (DispatchFile)DISPATCH_FILE_NULL(broker->signals_file);
         broker->controller = (Controller)CONTROLLER_NULL(broker->controller);
 
-        if (log_fd < 0)
-                log_init(&broker->log);
+        if (log_fd < 0) {
+            //log_init(&broker->log);
+#ifdef WIN32
+            log_init_stderr(&broker->log, _fileno(stderr));
+#else
+            log_init_stderr(&broker->log, STDERR_FILENO);
+#endif
+        }
         else if (log_type == SOCK_STREAM)
                 log_init_stderr(&broker->log, log_fd);
         else if (log_type == SOCK_DGRAM)
