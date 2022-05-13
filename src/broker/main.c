@@ -98,8 +98,12 @@ SOCKET ConvertProcessSocket(SOCKET oldsocket, DWORD source_pid)
     int iResult;
     u_long iMode = 1;
     iResult = ioctlsocket(newhandle, FIONBIO, &iMode);
-    if (iResult != NO_ERROR)
+    if (iResult != NO_ERROR) {
         printf("ioctlsocket failed with error: %ld\n", iResult);
+    }
+    if (!SetHandleInformation((HANDLE)newhandle, HANDLE_FLAG_INHERIT, 0)) {
+        printf("SetHandleInformation failed with error: %d\n", GetLastError());
+    }
 
     return (SOCKET)newhandle;
 }

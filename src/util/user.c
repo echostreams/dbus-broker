@@ -174,8 +174,6 @@ static int user_new(User **userp, UserRegistry *registry, uid_t uid) {
         User *user;
         size_t i;
         
-        printf("      user_new registry->n_slots: %d\n", registry->n_slots);
-
         user = calloc(1, sizeof(*user) + registry->n_slots * sizeof(*user->slots));
         if (!user)
                 return error_origin(-ENOMEM);
@@ -434,10 +432,7 @@ int user_registry_ref_user(UserRegistry *registry, User **userp, uid_t uid) {
         CRBNode **slot, *parent;
         int r;
 
-        printf("    user_registry_ref_user>>>>\n");
         slot = c_rbtree_find_slot(&registry->user_tree, user_compare, &uid, &parent);
-
-        printf("    user_registry_ref_user slot %p\n", slot);
 
         if (slot) {
                 r = user_new(&user, registry, uid);
@@ -445,12 +440,12 @@ int user_registry_ref_user(UserRegistry *registry, User **userp, uid_t uid) {
                         return error_trace(r);
 
                 user_link(user, parent, slot);
-                printf("    user_registry_ref_user=====\n");
+
         } else {
                 user = c_container_of(parent, User, registry_node);
                 user_ref(user);
         }
-        printf("    user_registry_ref_user*****\n");
+
         *userp = user;
         return 0;
 }

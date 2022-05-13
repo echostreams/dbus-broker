@@ -1758,7 +1758,7 @@ static inline DWORD sock__epoll_events_to_afd_events(uint32_t epoll_events) {
 
 static inline uint32_t sock__afd_events_to_epoll_events(DWORD afd_events) {
     uint32_t epoll_events = 0;
-
+    //printf("   afd_events %ld\n", afd_events);
     if (afd_events & (AFD_POLL_RECEIVE | AFD_POLL_ACCEPT))
         epoll_events |= EPOLLIN | EPOLLRDNORM;
     if (afd_events & AFD_POLL_RECEIVE_EXPEDITED)

@@ -13,6 +13,8 @@
 #ifndef LINE_MAX
 #define LINE_MAX 2048
 #endif
+char* strchrnul(const char* s, int c);
+#include <string.h>
 #endif  
 
 int proc_get_seclabel(pid_t pid, char **labelp, size_t *n_labelp) {

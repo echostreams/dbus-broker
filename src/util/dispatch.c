@@ -94,7 +94,11 @@ int dispatch_file_init(DispatchFile *file,
                       EPOLL_CTL_ADD,
                       fd,
                       &(struct epoll_event) {
+#ifdef WIN32
+                                .events = mask | EPOLLHUP,
+#else
                                 .events = mask | EPOLLET,
+#endif
                                 .data.ptr = file,
                       });
         if (r < 0)
@@ -190,6 +194,12 @@ void dispatch_file_select(DispatchFile *file, uint32_t mask) {
 void dispatch_file_deselect(DispatchFile *file, uint32_t mask) {
         c_assert(!(mask & ~file->kernel_mask));
 
+        printf("   dispatch_file_deselect: fd=%d, events=%d, user_mask=%d, kernel_mask=%d\n", 
+            file->fd,
+            file->events,
+            file->user_mask,
+            file->kernel_mask);
+
         file->user_mask &= ~mask;
         if (!(file->events & file->user_mask))
                 c_list_unlink(&file->ready_link);
@@ -248,7 +258,11 @@ void dispatch_context_deinit(DispatchContext *ctx) {
         c_assert(!ctx->n_files);
         c_assert(c_list_is_empty(&ctx->ready_list));
 
+#ifdef WIN32
+        ctx->epoll_fd = c_closesocket(ctx->epoll_fd);
+#else
         ctx->epoll_fd = c_close(ctx->epoll_fd);
+#endif
 }
 
 /**
@@ -281,7 +295,11 @@ int dispatch_context_poll(DispatchContext *ctx, int timeout) {
 
                 events = buffer;
         } else {
+#ifdef WIN32
+                events = _alloca(n);
+#else
                 events = alloca(n);
+#endif
         }
 
         r = epoll_wait(ctx->epoll_fd, events, ctx->n_files, timeout);

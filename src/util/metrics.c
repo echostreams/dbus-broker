@@ -21,6 +21,10 @@
 #include <time.h>
 #include "util/metrics.h"
 
+#ifdef WIN32
+#include <win_clock_gettime.h>
+#endif
+
 void metrics_init(Metrics *metrics, clockid_t id) {
         *metrics = (Metrics)METRICS_INIT(id);
 }

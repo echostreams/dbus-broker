@@ -275,12 +275,12 @@ static bool log_alloc(Log *log) {
 }
 
 static int log_fd_send(int destination_fd, int payload_fd) {
+#if defined(__linux__)
         union {
                 char buffer[CMSG_SPACE(sizeof(int))];
                 struct cmsghdr cmsg;
         } control;
 
-#if defined(__linux__)
         struct msghdr msg;
         ssize_t l;
 

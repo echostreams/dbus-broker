@@ -280,7 +280,7 @@ void win_fork_broker(sd_bus** busp, sd_event* event, int listener_fd, pid_t* pid
 
     pid = pi.dwProcessId;
 
-    Sleep(3000);
+    Sleep(1000);
 
     /* remember the daemon's pid */
     if (pidp)

@@ -529,6 +529,15 @@ static inline int c_close(int fd) {
         return -1;
 }
 
+#ifdef WIN32
+static inline int c_closesocket(int fd) {
+    if (fd >= 0)
+        closesocket(fd);
+    return -1;
+}
+#endif
+
+
 static inline FILE *c_fclose(FILE *f) {
         if (f)
                 fclose(f);

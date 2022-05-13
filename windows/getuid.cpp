@@ -2,9 +2,12 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <sddl.h>
-
+#include <wincrypt.h>
+#include <iphlpapi.h>
+#include <WS2tcpip.h>
 #include <iostream>
 #include <iomanip>
 #include <memory>
@@ -233,6 +236,8 @@ _dbus_win_warn_win_error(const char* message,
     typedef unsigned long dbus_pid_t;
     typedef uint32_t dbus_bool_t;
     #define _dbus_verbose printf
+#define dbus_malloc malloc
+#define dbus_free free
 
     dbus_bool_t
         _dbus_getsid(char** sid, dbus_pid_t process_id)
@@ -313,6 +318,203 @@ _dbus_win_warn_win_error(const char* message,
 #else
         return NULL;
 #endif
+    }
+
+    /*
+     * _MIB_TCPROW_EX and friends are not available in system headers
+     *  and are mapped to attribute identical ...OWNER_PID typedefs.
+     */
+    typedef MIB_TCPROW_OWNER_PID _MIB_TCPROW_EX;
+    typedef MIB_TCPTABLE_OWNER_PID MIB_TCPTABLE_EX;
+    typedef PMIB_TCPTABLE_OWNER_PID PMIB_TCPTABLE_EX;
+    typedef DWORD(WINAPI* ProcAllocateAndGetTcpExtTableFromStack)(PMIB_TCPTABLE_EX*, BOOL, HANDLE, DWORD, DWORD);
+    static ProcAllocateAndGetTcpExtTableFromStack lpfnAllocateAndGetTcpExTableFromStack = NULL;
+
+
+    /**
+ * AllocateAndGetTcpExTableFromStack() is undocumented and not exported,
+ * but is the only way to do this in older XP versions.
+ * @return true if the procedures could be loaded
+ */
+    static BOOL
+    load_ex_ip_helper_procedures(void)
+    {
+        HMODULE hModule = LoadLibrary("iphlpapi.dll");
+        if (hModule == NULL)
+        {
+            _dbus_verbose("could not load iphlpapi.dll\n");
+            return FALSE;
+        }
+
+        lpfnAllocateAndGetTcpExTableFromStack = (ProcAllocateAndGetTcpExtTableFromStack)GetProcAddress(hModule, "AllocateAndGetTcpExTableFromStack");
+        if (lpfnAllocateAndGetTcpExTableFromStack == NULL)
+        {
+            _dbus_verbose("could not find function AllocateAndGetTcpExTableFromStack in iphlpapi.dll\n");
+            return FALSE;
+        }
+        return TRUE;
+    }
+
+    /**
+     * get pid from localhost tcp connection using peer_port
+     * This function is available on WinXP >= SP3
+     * @param peer_port peers tcp port
+     * @return process id or 0 if connection has not been found
+     */
+    static dbus_pid_t
+        get_pid_from_extended_tcp_table(int peer_port)
+    {
+        dbus_pid_t result;
+        DWORD errorCode, size = 0, i;
+        MIB_TCPTABLE_OWNER_PID* tcp_table;
+
+        if ((errorCode =
+            GetExtendedTcpTable(NULL, &size, TRUE, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0)) == ERROR_INSUFFICIENT_BUFFER)
+        {
+            tcp_table = (MIB_TCPTABLE_OWNER_PID*)dbus_malloc(size);
+            if (tcp_table == NULL)
+            {
+                _dbus_verbose("Error allocating memory\n");
+                return 0;
+            }
+        }
+        else
+        {
+            _dbus_win_warn_win_error("unexpected error returned from GetExtendedTcpTable", errorCode);
+            return 0;
+        }
+
+        if ((errorCode = GetExtendedTcpTable(tcp_table, &size, TRUE, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0)) != NO_ERROR)
+        {
+            _dbus_verbose("Error fetching tcp table %d\n", (int)errorCode);
+            dbus_free(tcp_table);
+            return 0;
+        }
+
+        result = 0;
+        for (i = 0; i < tcp_table->dwNumEntries; i++)
+        {
+            MIB_TCPROW_OWNER_PID* p = &tcp_table->table[i];
+            int local_address = ntohl(p->dwLocalAddr);
+            int local_port = ntohs(p->dwLocalPort);
+            if (p->dwState == MIB_TCP_STATE_ESTAB
+                && local_address == INADDR_LOOPBACK && local_port == peer_port)
+                result = p->dwOwningPid;
+        }
+
+        dbus_free(tcp_table);
+        _dbus_verbose("got pid %lu\n", result);
+        return result;
+    }
+
+    /**
+     * get pid from localhost tcp connection using peer_port
+     * This function is available on all WinXP versions, but
+     * not in wine (at least version <= 1.6.0)
+     * @param peer_port peers tcp port
+     * @return process id or 0 if connection has not been found
+     */
+    static dbus_pid_t
+        get_pid_from_tcp_ex_table(int peer_port)
+    {
+        dbus_pid_t result;
+        DWORD errorCode, i;
+        PMIB_TCPTABLE_EX tcp_table = NULL;
+
+        if (!load_ex_ip_helper_procedures())
+        {
+            _dbus_verbose
+            ("Error not been able to load iphelper procedures\n");
+            return 0;
+        }
+
+        errorCode = lpfnAllocateAndGetTcpExTableFromStack(&tcp_table, TRUE, GetProcessHeap(), 0, 2);
+
+        if (errorCode != NO_ERROR)
+        {
+            _dbus_verbose
+            ("Error not been able to call AllocateAndGetTcpExTableFromStack()\n");
+            return 0;
+        }
+
+        result = 0;
+        for (i = 0; i < tcp_table->dwNumEntries; i++)
+        {
+            _MIB_TCPROW_EX* p = &tcp_table->table[i];
+            int local_port = ntohs(p->dwLocalPort);
+            int local_address = ntohl(p->dwLocalAddr);
+            if (local_address == INADDR_LOOPBACK && local_port == peer_port)
+            {
+                result = p->dwOwningPid;
+                break;
+            }
+        }
+
+        HeapFree(GetProcessHeap(), 0, tcp_table);
+        _dbus_verbose("got pid %lu\n", result);
+        return result;
+    }
+
+    /**
+ * @brief return peer process id from tcp handle for localhost connections
+ * @param handle tcp socket descriptor
+ * @return process id or 0 in case the process id could not be fetched
+ */
+    dbus_pid_t
+        _dbus_get_peer_pid_from_tcp_handle(int handle)
+    {
+        struct sockaddr_storage addr;
+        socklen_t len = sizeof(addr);
+        int peer_port;
+
+        dbus_pid_t result;
+        dbus_bool_t is_localhost = FALSE;
+
+        getpeername(handle, (struct sockaddr*)&addr, &len);
+
+        if (addr.ss_family == AF_INET)
+        {
+            struct sockaddr_in* s = (struct sockaddr_in*)&addr;
+            peer_port = ntohs(s->sin_port);
+            is_localhost = (ntohl(s->sin_addr.s_addr) == INADDR_LOOPBACK);
+        }
+        else if (addr.ss_family == AF_INET6)
+        {
+            _dbus_verbose("FIXME [61922]: IPV6 support not working on windows\n");
+            return 0;
+            /*
+               struct sockaddr_in6 *s = (struct sockaddr_in6 * )&addr;
+               peer_port = ntohs (s->sin6_port);
+               is_localhost = (memcmp(s->sin6_addr.s6_addr, in6addr_loopback.s6_addr, 16) == 0);
+               _dbus_verbose ("IPV6 %08x %08x\n", s->sin6_addr.s6_addr, in6addr_loopback.s6_addr);
+             */
+        }
+        else
+        {
+            _dbus_verbose("no idea what address family %d is\n", addr.ss_family);
+            return 0;
+        }
+
+        if (!is_localhost)
+        {
+            _dbus_verbose("could not fetch process id from remote process\n");
+            return 0;
+        }
+
+        if (peer_port == 0)
+        {
+            _dbus_verbose
+            ("Error not been able to fetch tcp peer port from connection\n");
+            return 0;
+        }
+
+        _dbus_verbose("trying to get peer's pid\n");
+
+        result = get_pid_from_extended_tcp_table(peer_port);
+        if (result > 0)
+            return result;
+        result = get_pid_from_tcp_ex_table(peer_port);
+        return result;
     }
 
 #ifdef __cplusplus

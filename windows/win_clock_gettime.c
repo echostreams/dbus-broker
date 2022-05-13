@@ -184,6 +184,9 @@ int clock_gettime(clockid_t clock_id, struct timespec* tp)
  *         If the function fails, the return value is -1,
  *         with errno set to indicate the error.
  */
+
+int nanosleep(const struct timespec* rqtp, struct timespec* rmtp);
+
 int clock_nanosleep(clockid_t clock_id, int flags,
     const struct timespec* request,
     struct timespec* remain)

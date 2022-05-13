@@ -335,6 +335,10 @@ static void socket_shutdown_now(Socket *socket) {
         if (!socket->hup_out) {
 #ifdef WIN32
                 r = shutdown(socket->fd, SD_SEND);
+                if (r == SOCKET_ERROR) {
+                    DWORD err = WSAGetLastError();
+                    printf(" winsock shutdown failed with %lu:%s\n", err, strerror(err));
+                }
 #else
                 r = shutdown(socket->fd, SHUT_WR);
 #endif
@@ -593,9 +597,13 @@ static int socket_recvmsg(Socket *socket,
 #else
         l = recv(socket->fd, buffer + *from, to - *from, 0);
 
-        printf(" broker recv: %d\n", l);
+        printf(" broker recv[1]: %zd\n", l);
         if (l > 0) {
             dump_hex(buffer + *from, l);
+        }
+        else if (l == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK) {
+            l = recv(socket->fd, buffer + *from, to - *from, 0);
+            printf(" broker recv[2]: %zd\n", l);
         }
 #endif
 
@@ -611,8 +619,10 @@ static int socket_recvmsg(Socket *socket,
 
 #ifdef WIN32
             DWORD err = WSAGetLastError();
-            if (err == WSAEWOULDBLOCK)
+            printf("  broker recv err %ld:%s %d\n", err, strerror(err), errno);
+            if (err == WSAEWOULDBLOCK) {
                 return 0;
+            }
 #endif
 
                 switch (errno) {
@@ -810,7 +820,7 @@ static int socket_dispatch_write(Socket *socket) {
                 r = ioctl(socket->fd, SIOCOUTQ, &v);
                 if (r < 0)
                         return error_origin(-errno);
-#endif
+
                 /*
                  * We would like to check for an empty queue here:
                  *
@@ -852,6 +862,7 @@ static int socket_dispatch_write(Socket *socket) {
                  */
                 if (v > 128)
                         return 0;
+#endif
 
                 c_list_for_each_entry_safe(buffer, safe, &socket->out.pending, link)
                         socket_buffer_free(buffer);
@@ -923,7 +934,7 @@ static int socket_dispatch_write(Socket *socket) {
                 }
                 DWORD bytes_sent = 0;
                 ret = WSASend(socket->fd, buf, msgs[i].msg_hdr.msg_iovlen, &bytes_sent, 0, NULL, NULL);
-                fprintf(stderr, "WSASend: msgs[%d] %d\n", i, bytes_sent);
+                fprintf(stderr, "WSASend: msgs[%d] %ld, returns: %d\n", i, bytes_sent, ret);
                 //The msg_len field is used to return the number of bytes sent from the message in msg_hdr
                 msgs[i].msg_len = bytes_sent;
                 

@@ -52,7 +52,7 @@
 	else if (flags & MAP_ANON)
 		return MAP_FAILED;
 
-	DWORD flProtect;
+	DWORD flProtect = 0;
 	if (prot & PROT_WRITE) {
 		if (prot & PROT_EXEC)
 			flProtect = PAGE_EXECUTE_READWRITE;

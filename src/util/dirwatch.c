@@ -88,7 +88,11 @@ int dirwatch_dispatch(Dirwatch *dw) {
         ssize_t l;
 
         do {
+#ifdef WIN32
+                l = _read(dw->inotify_fd, buffer, sizeof(buffer));
+#else
                 l = read(dw->inotify_fd, buffer, sizeof(buffer));
+#endif
                 if (l > 0) {
                         triggered = true;
                 } else if (!l) {

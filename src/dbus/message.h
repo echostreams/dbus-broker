@@ -10,6 +10,10 @@
 #include "dbus/protocol.h"
 #include "util/ref.h"
 
+#ifdef WIN32
+#include <endian.h>
+#endif
+
 typedef struct FDList FDList;
 typedef struct Log Log;
 typedef struct Message Message;

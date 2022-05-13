@@ -22,10 +22,11 @@ static void q_assert(int s, bool has_in, bool has_out) {
         r = ioctl(s, SIOCINQ, &v);
         c_assert(r >= 0);
         c_assert(!v == !has_in);
-
+#ifndef WSL2
         r = ioctl(s, SIOCOUTQ, &v);
         c_assert(r >= 0);
         c_assert(!v == !has_out);
+#endif
 }
 
 /*

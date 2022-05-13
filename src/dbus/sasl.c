@@ -22,6 +22,10 @@
 #include "util/error.h"
 #include "util/string.h"
 
+#ifdef WIN32
+uint32_t _dbus_getsid(char** sid, unsigned long process_id);
+#endif
+
 static void sasl_split(const char *input, size_t n_input,
                        const char **cmd, size_t *n_cmd,
                        const char **arg, size_t *n_arg) {
@@ -192,8 +196,10 @@ void sasl_server_deinit(SASLServer *sasl) {
 };
 
 static void sasl_server_handle_data(SASLServer *sasl, const char *input, size_t n_input, const char **outputp, size_t *n_outputp) {
+#if defined(__linux__)
         char hexbuf[2 * C_DECIMAL_MAX(uint32_t) + 1];
         char uidbuf[C_DECIMAL_MAX(uint32_t) + 1];
+#endif
         bool failed = false;
         int n;
 
@@ -208,10 +214,10 @@ static void sasl_server_handle_data(SASLServer *sasl, const char *input, size_t 
             char* win_sid;
             if (_dbus_getsid(&win_sid, 0))
             {
-                size_t n = strlen(win_sid);
+                n = strlen(win_sid);
                 char* sid_hex = malloc(n * 2 + 1);
                 string_to_hex(win_sid, n, sid_hex);
-                if (n_input != 2 * n || memcmp(input, sid_hex, 2 * n))
+                if (n_input != 2 * (size_t)n || memcmp(input, sid_hex, 2 * n))
                     failed = true;
             }
             LocalFree(win_sid);

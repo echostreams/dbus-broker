@@ -239,7 +239,12 @@ int broker_new(Broker **brokerp, const char *machine_id, int log_fd, int control
         u_long iMode = 1;
         status = ioctlsocket(listener_fd, FIONBIO, &iMode);
         if (status != NO_ERROR) {
-            printf("ioctlsocket failed with error: %ld\n", status);
+            printf("ioctlsocket failed with error: %d\n", status);
+        }
+
+        if (!SetHandleInformation((HANDLE)listener_fd, HANDLE_FLAG_INHERIT, 0))
+        {
+            printf("SetHandleInformation failed with error: %d\n", GetLastError());
         }
 
         r = bind(listener_fd, res->ai_addr, res->ai_addrlen);

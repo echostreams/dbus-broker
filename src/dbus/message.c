@@ -108,7 +108,7 @@ int message_new_outgoing(Message **messagep, void *data, size_t n_data) {
         int r;
 
         c_assert(n_data >= sizeof(MessageHeader));
-        c_assert(!((unsigned long)data & 0x7));
+        c_assert(!((unsigned long long)data & 0x7));
         c_assert((header->endian == 'B') == (__BYTE_ORDER == __BIG_ENDIAN) &&
                (header->endian == 'l') == (__BYTE_ORDER == __LITTLE_ENDIAN));
         c_assert(n_data >= sizeof(MessageHeader) + c_align_to(header->n_fields, 8));
