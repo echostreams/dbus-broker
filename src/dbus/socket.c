@@ -54,6 +54,37 @@ struct SocketBuffer {
         struct iovec vecs[];
 };
 
+void dump_hex(const void* data, size_t size) {
+    char ascii[17];
+    size_t i, j;
+    ascii[16] = '\0';
+    for (i = 0; i < size; ++i) {
+        printf("%02X ", ((unsigned char*)data)[i]);
+        if (((unsigned char*)data)[i] >= ' ' && ((unsigned char*)data)[i] <= '~') {
+            ascii[i % 16] = ((unsigned char*)data)[i];
+        }
+        else {
+            ascii[i % 16] = '.';
+        }
+        if ((i + 1) % 8 == 0 || i + 1 == size) {
+            printf(" ");
+            if ((i + 1) % 16 == 0) {
+                printf("|  %s \n", ascii);
+            }
+            else if (i + 1 == size) {
+                ascii[(i + 1) % 16] = '\0';
+                if ((i + 1) % 16 <= 8) {
+                    printf(" ");
+                }
+                for (j = (i + 1) % 16; j < 16; ++j) {
+                    printf("   ");
+                }
+                printf("|  %s \n", ascii);
+            }
+        }
+    }
+}
+
 static char *socket_buffer_get_base(SocketBuffer *buffer) {
         return (char *)(buffer->vecs + buffer->n_vecs);
 }
@@ -561,6 +592,11 @@ static int socket_recvmsg(Socket *socket,
         l = recvmsg(socket->fd, &msg, MSG_DONTWAIT | MSG_CMSG_CLOEXEC);
 #else
         l = recv(socket->fd, buffer + *from, to - *from, 0);
+
+        printf(" broker recv: %d\n", l);
+        if (l > 0) {
+            dump_hex(buffer + *from, l);
+        }
 #endif
 
         if (_c_unlikely_(!l)) {
@@ -887,7 +923,7 @@ static int socket_dispatch_write(Socket *socket) {
                 }
                 DWORD bytes_sent = 0;
                 ret = WSASend(socket->fd, buf, msgs[i].msg_hdr.msg_iovlen, &bytes_sent, 0, NULL, NULL);
-                fprintf(stderr, "WSASend: msgs[%d] %d == %d\n", i, bytes_sent, msgs[i].msg_len);
+                fprintf(stderr, "WSASend: msgs[%d] %d\n", i, bytes_sent);
                 //The msg_len field is used to return the number of bytes sent from the message in msg_hdr
                 msgs[i].msg_len = bytes_sent;
                 
