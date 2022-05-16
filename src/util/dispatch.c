@@ -94,11 +94,7 @@ int dispatch_file_init(DispatchFile *file,
                       EPOLL_CTL_ADD,
                       fd,
                       &(struct epoll_event) {
-#ifdef WIN32
-                                .events = mask | EPOLLHUP,
-#else
                                 .events = mask | EPOLLET,
-#endif
                                 .data.ptr = file,
                       });
         if (r < 0)
@@ -303,8 +299,8 @@ int dispatch_context_poll(DispatchContext *ctx, int timeout) {
         }
 
         r = epoll_wait(ctx->epoll_fd, events, ctx->n_files, timeout);
-        if (r > 0)
-            printf("  epoll_wait: r=%d, events=%d\n", r, events->events);
+        //if (r > 0)
+        //    printf("  epoll_wait: r=%d, events=%d\n", r, events->events);
         if (r < 0) {
                 if (errno == EINTR)
                         return 0;

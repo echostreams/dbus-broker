@@ -335,8 +335,8 @@ static void socket_hangup_output(Socket *socket) {
                 socket_might_reset(socket);
 
 #ifdef WIN32
+                // wepoll does not support EPOLLET, need to hangup input side
                 socket_hangup_input(socket);
-                //socket_close(socket);
 #endif
         }
 }
@@ -614,11 +614,7 @@ static int socket_recvmsg(Socket *socket,
         printf(" broker recv[1]: %zd\n", l);
         if (l > 0) {
             dump_hex(buffer + *from, l);
-        }
-        else if (l == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK) {
-            l = recv(socket->fd, buffer + *from, to - *from, 0);
-            printf(" broker recv[2]: %zd\n", l);
-        }
+        }        
 #endif
 
         if (_c_unlikely_(!l)) {
@@ -634,10 +630,24 @@ static int socket_recvmsg(Socket *socket,
 #ifdef WIN32
             DWORD err = WSAGetLastError();
             printf("  broker recv err %ld:%s %d\n", err, strerror(err), errno);
-            if (err == WSAEWOULDBLOCK) {
+            switch (err) {
+            case WSAEWOULDBLOCK:
                 return 0;
+            case WSAECONNRESET:
+            case WSAECONNABORTED:
+                /*
+                 * If recvmsg(2) fails, this means both read-side *and*
+                 * write-side are shutdown. A mere read-side hangup is
+                 * signalled by a 0 return-value (handled above).
+                 */
+                socket_hangup_input(socket);
+                socket_hangup_output(socket);
+                return SOCKET_E_LOST_INTEREST;
             }
-#endif
+
+            return error_origin(-errno);
+
+#else
 
                 switch (errno) {
                 case EAGAIN:
@@ -666,6 +676,7 @@ static int socket_recvmsg(Socket *socket,
                 }
 
                 return error_origin(-errno);
+#endif
         }
 #if defined(__linux__)
         for (cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
