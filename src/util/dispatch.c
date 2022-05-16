@@ -303,6 +303,8 @@ int dispatch_context_poll(DispatchContext *ctx, int timeout) {
         }
 
         r = epoll_wait(ctx->epoll_fd, events, ctx->n_files, timeout);
+        if (r > 0)
+            printf("  epoll_wait: r=%d, events=%d\n", r, events->events);
         if (r < 0) {
                 if (errno == EINTR)
                         return 0;

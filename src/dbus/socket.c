@@ -291,6 +291,15 @@ void socket_deinit(Socket *socket) {
 }
 
 static void socket_might_reset(Socket *socket) {
+
+    printf("  reset: %d, hup_in: %d, hup_out: %d, out.pending: %d, in.queue: %d\n",
+        socket->reset,
+        socket->hup_in,
+        socket->hup_out,
+        c_list_is_empty(&socket->out.pending),
+        iqueue_is_eof(&socket->in.queue)
+    );
+
         if (_c_unlikely_(!socket->reset &&
                          socket->hup_in &&
                          socket->hup_out &&
@@ -324,6 +333,11 @@ static void socket_hangup_output(Socket *socket) {
                 socket->hup_out = true;
                 socket_discard_output(socket);
                 socket_might_reset(socket);
+
+#ifdef WIN32
+                socket_hangup_input(socket);
+                //socket_close(socket);
+#endif
         }
 }
 

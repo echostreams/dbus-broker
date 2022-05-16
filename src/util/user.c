@@ -200,12 +200,14 @@ void user_free(/*_Atomic (unsigned long)*/atomic_ulong *n_refs, void* userdata) 
         User *user = c_container_of(n_refs, User, n_refs);
         size_t i;
 
+#if defined(__linux__)
         c_assert(c_rbtree_is_empty(&user->usage_tree));
         c_assert(user->n_usages == 0);
+       
 
         for (i = 0; i < user->registry->n_slots; ++i)
                 c_assert(user->slots[i].n == user->slots[i].max);
-
+#endif 
         user_unlink(user);
         free(user);
 }

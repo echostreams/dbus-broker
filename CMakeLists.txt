@@ -364,3 +364,11 @@ target_link_libraries(test-socket libbus libcdvar libcrbtree libcutf8)
 if(WIN32)
 	target_link_libraries(test-socket libsystemd-mini ws2_32)
 endif()
+
+add_executable(test-user
+	"src/util/test-user.c"
+)
+target_link_libraries(test-user libbus libcdvar libcrbtree libcutf8)
+if(WIN32)
+	target_link_libraries(test-user ws2_32)
+endif()
