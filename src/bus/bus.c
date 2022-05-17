@@ -18,6 +18,21 @@
 #include "util/log.h"
 #include "util/user.h"
 
+#ifdef WIN32
+ // Microsoft doesn't "officially" support using RtlGenRandom() directly
+ // anymore, and the Windows headers assume that __stdcall is
+ // the default calling convention (which is true when Microsoft uses this
+ // function to build their own CRT libraries).
+
+ // We will explicitly declare it with the proper calling convention.
+
+#  include "minwindef.h"
+#  define RtlGenRandom SystemFunction036
+extern BOOLEAN NTAPI RtlGenRandom(PVOID RandomBuffer,
+    ULONG RandomBufferLength);
+
+#endif
+
 int bus_init(Bus *bus,
              Log *log,
              const char *machine_id,
@@ -44,6 +59,9 @@ int bus_init(Bus *bus,
         random = (void *)getauxval(AT_RANDOM);
         c_assert(random);
         memcpy(bus->guid, random, sizeof(bus->guid));
+#else
+        (void)random; // not used
+        RtlGenRandom(bus->guid, sizeof(bus->guid));
 #endif
 
         r = user_registry_init(&bus->users, log, _USER_SLOT_N, maxima);

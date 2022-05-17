@@ -960,6 +960,23 @@ static int socket_dispatch_write(Socket *socket) {
                 DWORD bytes_sent = 0;
                 ret = WSASend(socket->fd, buf, msgs[i].msg_hdr.msg_iovlen, &bytes_sent, 0, NULL, NULL);
                 fprintf(stderr, "WSASend: msgs[%d] %ld, returns: %d\n", i, bytes_sent, ret);
+                if (ret == SOCKET_ERROR) {
+                    DWORD err = GetLastError();
+                    switch (err)
+                    {
+                    case WSAEWOULDBLOCK:
+                        return 0;
+                    case WSAECONNRESET:
+                    case WSAECONNABORTED:
+                    case WSAENETDOWN:
+                    case WSAESHUTDOWN:
+                        socket_hangup_output(socket);
+                        return SOCKET_E_LOST_INTEREST;
+                    default:
+                        break;
+                    }
+                    return error_origin(-err);
+                }
                 //The msg_len field is used to return the number of bytes sent from the message in msg_hdr
                 msgs[i].msg_len = bytes_sent;
                 
