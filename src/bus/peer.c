@@ -15,6 +15,7 @@ struct ucred {
         unsigned int   uid;
         unsigned int   gid;
 };
+unsigned int _dbus_get_peer_pid_from_tcp_handle(int handle);
 #endif
 #include <sys/types.h>
 #include "bus/bus.h"

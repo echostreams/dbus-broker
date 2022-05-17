@@ -36,7 +36,8 @@ int uv_socketpair(int type,
 #pragma comment(lib, "ws2_32.lib")
 
 static void q_assert(int s, bool has_in, bool has_out) {
-    int r, v;
+    int r;
+    u_long v;
 
     /*
      * Verify that the IN/OUT queues are (non-)empty, depending on what is

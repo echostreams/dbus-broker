@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include "util-broker.h"
 
+extern void log_set_max_level(int);
+
 static void test_dummy(void) {
         _c_cleanup_(util_broker_freep) Broker *broker = NULL;
 

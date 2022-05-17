@@ -85,4 +85,6 @@ struct mmsghdr {
         unsigned int    msg_len;
 };
 
+int socketpair(int domain, int type, int protocol, int sv[2]);
+
 #endif /* SYS_SOCKET_H */

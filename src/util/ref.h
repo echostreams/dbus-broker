@@ -104,13 +104,24 @@ static inline /*_Atomic (unsigned long)*/atomic_ulong *ref_add_unless_zero(
                  * to deduce the state of the object. It must rely on external
                  * synchronization, if that is required.
                  */
+#if defined(__linux__)
                 n_refs = atomic_load_explicit(ref, memory_order_relaxed);
+#else
+                rcutils_win32_atomic_load(ref, n_refs);
+#endif
                 do {
                         if (n_refs == 0)
                                 return NULL;
-                } while (!atomic_compare_exchange_weak_explicit(ref, &n_refs, n_refs + n,
-                                                                memory_order_relaxed,
-                                                                memory_order_relaxed));
+                }
+#if defined(__linux__)
+                while (!atomic_compare_exchange_weak_explicit(ref, &n_refs, n_refs + n,
+                    memory_order_relaxed,
+                    memory_order_relaxed));
+#else
+                while (!atomic_compare_exchange_weak_explicit((intptr_t*)ref, (intptr_t*)&n_refs, n_refs + n,
+                    memory_order_relaxed,
+                    memory_order_relaxed));
+#endif
         }
 
         return ref;

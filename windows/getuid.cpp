@@ -219,7 +219,7 @@ _dbus_win_warn_win_error(const char* message,
     }
     else {
         //dbus_set_error(error, "win32.error", "Unknown error code %d or FormatMessage failed", code);
-        printf("%s: Unknown error code %d or FormatMessage failed\n", message, code);
+        printf("%s: Unknown error code %lu or FormatMessage failed\n", message, code);
     }
     //_dbus_warn("%s: %s", message, error.message);
     //dbus_error_free(&error);

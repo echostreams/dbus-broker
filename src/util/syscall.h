@@ -38,6 +38,7 @@ static inline int syscall_memfd_create(const char *name, unsigned int flags) {
 #endif
         return (int)syscall(nr, name, flags);
 #else
+        //errno = EINVAL;
         return -1;
 #endif
 }

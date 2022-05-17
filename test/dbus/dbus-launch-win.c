@@ -4,6 +4,11 @@
 #include <WinSock2.h>
 #include <WS2tcpip.h>
 #include <process.h>    /* _beginthread, _endthread */
+#include <stdbool.h>
+int socketpair(int domain, int type, int protocol, int sv[2]);
+int asprintf(char** strp, const char* fmt, ...);
+int sockaddr_pretty(const struct sockaddr* _sa, socklen_t salen, 
+    bool translate_ipv6, bool include_port, char** ret);
 
 //#undef NDEBUG
 #include <c-stdaux.h>
@@ -274,13 +279,13 @@ void win_fork_broker(sd_bus** busp, sd_event* event, int listener_fd, pid_t* pid
         &pi)            // Pointer to PROCESS_INFORMATION structure
         )
     {
-        printf("CreateProcess failed (%d).\n", GetLastError());
+        printf("CreateProcess failed (%lu).\n", GetLastError());
         return;
     }
 
     pid = pi.dwProcessId;
 
-    Sleep(1000);
+    //Sleep(1000);
 
     /* remember the daemon's pid */
     if (pidp)
@@ -330,7 +335,7 @@ void win_fork_broker(sd_bus** busp, sd_event* event, int listener_fd, pid_t* pid
     bus = NULL;
 }
 
-void win_broker_thread(void* userdata)
+unsigned int win_broker_thread(void* userdata)
 {
     _c_cleanup_(sd_event_unrefp) sd_event* event = NULL;
     _c_cleanup_(sd_bus_flush_close_unrefp) sd_bus* bus = NULL;
@@ -350,10 +355,10 @@ void win_broker_thread(void* userdata)
     if (broker->listener_fd >= 0) {
         win_fork_broker(&bus, event, broker->listener_fd, &broker->child_pid);
         /* dbus-broker reports its controller in GetConnectionUnixProcessID */
-        broker->pid = getpid();
+        broker->pid = _getpid();
         //broker->listener_fd = c_close(broker->listener_fd);
         closesocket(broker->listener_fd);
-        broker->listener_fd = INVALID_SOCKET;
+        broker->listener_fd = (int)INVALID_SOCKET;
     }
 #if 0
     else {
@@ -395,14 +400,14 @@ void win_broker_thread(void* userdata)
 
     broker->pipe_fds[0] = c_close(broker->pipe_fds[0]);
     //return (void*)(uintptr_t)r;
-
+    return r;
 }
 
 void win_broker_spawn(Broker* broker) {
     char buffer[PIPE_BUF + 1] = {};
     //sigset_t signew, sigold;
-    ssize_t n;
-    char* e;
+    //ssize_t n;
+    //char* e;
     int r;
 
     c_assert(broker->listener_fd < 0);
@@ -483,7 +488,7 @@ void win_broker_spawn(Broker* broker) {
         u_long iMode = 1;
         status = ioctlsocket(broker->listener_fd, FIONBIO, &iMode);
         if (status != NO_ERROR) {
-            printf("ioctlsocket failed with error: %ld\n", status);
+            printf("ioctlsocket failed with error: %d\n", status);
         }
 
         r = bind(broker->listener_fd, res->ai_addr, res->ai_addrlen);
@@ -504,7 +509,8 @@ void win_broker_spawn(Broker* broker) {
 #endif
 
 #ifdef WIN32
-        broker->thread = _beginthread(win_broker_thread, 0, (void*)broker);
+        unsigned int thread_id;
+        broker->thread = (HANDLE)_beginthreadex(NULL, 0, win_broker_thread, (void*)broker, 0, &thread_id);
         if (broker->thread == INVALID_HANDLE_VALUE)
         {
             r = errno;

@@ -59,7 +59,11 @@ int broker_new(Broker **brokerp, const char *machine_id, int log_fd, int control
 
         if (log_fd >= 0) {
                 z = sizeof(log_type);
+#ifdef WIN32
+                r = getsockopt(log_fd, SOL_SOCKET, SO_TYPE, (char*)&log_type, &z);
+#else
                 r = getsockopt(log_fd, SOL_SOCKET, SO_TYPE, &log_type, &z);
+#endif
                 if (r < 0)
                         return error_origin(-errno);
         }
@@ -83,12 +87,7 @@ int broker_new(Broker **brokerp, const char *machine_id, int log_fd, int control
         broker->controller = (Controller)CONTROLLER_NULL(broker->controller);
 
         if (log_fd < 0) {
-            //log_init(&broker->log);
-#ifdef WIN32
-            log_init_stderr(&broker->log, _fileno(stderr));
-#else
-            log_init_stderr(&broker->log, STDERR_FILENO);
-#endif
+            log_init(&broker->log);
         }
         else if (log_type == SOCK_STREAM)
                 log_init_stderr(&broker->log, log_fd);
@@ -244,7 +243,7 @@ int broker_new(Broker **brokerp, const char *machine_id, int log_fd, int control
 
         if (!SetHandleInformation((HANDLE)listener_fd, HANDLE_FLAG_INHERIT, 0))
         {
-            printf("SetHandleInformation failed with error: %d\n", GetLastError());
+            printf("SetHandleInformation failed with error: %lu\n", GetLastError());
         }
 
         r = bind(listener_fd, res->ai_addr, res->ai_addrlen);

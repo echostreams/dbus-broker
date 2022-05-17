@@ -16,6 +16,7 @@
 
 #ifdef WIN32
 extern char* strchrnul(const char* s, int c);
+extern char* stpcpy(char* /*restrict*/ dest, const char* /*restrict*/ src);
 #endif
 
 /* D-Bus type 'a(btbs)' */

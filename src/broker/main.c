@@ -91,18 +91,18 @@ SOCKET ConvertProcessSocket(SOCKET oldsocket, DWORD source_pid)
         return INVALID_SOCKET;
     }
     else {
-        fprintf(stderr, "DuplicateHandle(%d -> %d)\n", oldsocket, newhandle);
+        fprintf(stderr, "DuplicateHandle(%llu -> %d)\n", oldsocket, newhandle);
     }
     CloseHandle(source_handle);
 
     int iResult;
     u_long iMode = 1;
-    iResult = ioctlsocket(newhandle, FIONBIO, &iMode);
+    iResult = ioctlsocket((SOCKET)newhandle, FIONBIO, &iMode);
     if (iResult != NO_ERROR) {
-        printf("ioctlsocket failed with error: %ld\n", iResult);
+        printf("ioctlsocket failed with error: %d\n", iResult);
     }
     if (!SetHandleInformation((HANDLE)newhandle, HANDLE_FLAG_INHERIT, 0)) {
-        printf("SetHandleInformation failed with error: %d\n", GetLastError());
+        printf("SetHandleInformation failed with error: %lu\n", GetLastError());
     }
 
     return (SOCKET)newhandle;
@@ -277,7 +277,7 @@ int CreateWinControllerSocket()
     u_long iMode = 1;
     status = ioctlsocket(listener_fd, FIONBIO, &iMode);
     if (status != NO_ERROR) {
-        printf("ioctlsocket failed with error: %ld\n", status);
+        printf("ioctlsocket failed with error: %d\n", status);
     }
 
     r = bind(listener_fd, res->ai_addr, res->ai_addrlen);
@@ -507,7 +507,7 @@ static int parse_argv(int argc, char *argv[]) {
         /* verify controller-fd is STREAM */
         {
                 socklen_t n;
-                int v1, v2;
+                int v1, v2 = 0;
 
 #if defined SO_DOMAIN
                 n = sizeof(v1);

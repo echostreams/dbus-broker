@@ -416,6 +416,24 @@ typedef _Atomic (uintmax_t)atomic_uintmax_t;
      MemoryBarrier(); \
    } while (0)
 
+static inline int atomic_compare_exchange_strong(intptr_t* object, intptr_t* expected,
+    intptr_t desired)
+{
+    intptr_t old = *expected;
+    *expected = (intptr_t)InterlockedCompareExchangePointer(
+        (PVOID*)object, (PVOID)desired, (PVOID)old);
+    return *expected == old;
+}
+
+#define atomic_compare_exchange_strong_explicit(object, expected, desired, success, failure) \
+     atomic_compare_exchange_strong(object, expected, desired)
+
+#define atomic_compare_exchange_weak(object, expected, desired) \
+     atomic_compare_exchange_strong(object, expected, desired)
+
+#define atomic_compare_exchange_weak_explicit(object, expected, desired, success, failure) \
+     atomic_compare_exchange_weak(object, expected, desired)
+
  /*
   * 7.17.8 Atomic flag type and operations. (disabled for now)
   */
