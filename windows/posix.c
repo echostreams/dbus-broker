@@ -930,10 +930,10 @@ int _munmap(void *addr, size_t len)
 	return !success;
 }
 
-int msync(void *addr, size_t len, int flags)
-{
-	return !FlushViewOfFile(addr, len);
-}
+//int msync(void *addr, size_t len, int flags)
+//{
+//	return !FlushViewOfFile(addr, len);
+//}
 
 int fork(void)
 {

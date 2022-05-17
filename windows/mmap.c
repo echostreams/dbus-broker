@@ -13,95 +13,185 @@
 
 #if defined(_WIN32) || defined(_WIN64)
 
-#include <io.h>
+
 #include <windows.h>
-#include <sys/types.h>
+#include <errno.h>
+#include <io.h>
 
-#define PROT_READ     0x1
-#define PROT_WRITE    0x2
-  /* This flag is only available in WinXP+ */
-#ifdef FILE_MAP_EXECUTE
-#define PROT_EXEC     0x4
-#else
-#define PROT_EXEC        0x0
-#define FILE_MAP_EXECUTE 0
-#endif
+#include <sys/mman.h>
 
-#define MAP_SHARED    0x01
-#define MAP_PRIVATE   0x02
-#define MAP_ANONYMOUS 0x20
-#define MAP_ANON      MAP_ANONYMOUS
-#define MAP_FAILED    ((void *) -1)
+#ifndef FILE_MAP_EXECUTE
+#define FILE_MAP_EXECUTE    0x0020
+#endif /* FILE_MAP_EXECUTE */
 
-#ifdef __USE_FILE_OFFSET64
-# define DWORD_HI(x) (x >> 32)
-# define DWORD_LO(x) ((x) & 0xffffffff)
-#else
-# define DWORD_HI(x) (0)
-# define DWORD_LO(x) (x)
-#endif
-
-/*static*/ void* mmap(void* start, size_t length, int prot, int flags, int fd, off_t offset)
+static int __map_mman_error(const DWORD err, const int deferr)
 {
-	if (prot & ~(PROT_READ | PROT_WRITE | PROT_EXEC))
-		return MAP_FAILED;
-	if (fd == -1) {
-		if (!(flags & MAP_ANON) || offset)
-			return MAP_FAILED;
-	}
-	else if (flags & MAP_ANON)
-		return MAP_FAILED;
-
-	DWORD flProtect = 0;
-	if (prot & PROT_WRITE) {
-		if (prot & PROT_EXEC)
-			flProtect = PAGE_EXECUTE_READWRITE;
-		else
-			flProtect = PAGE_READWRITE;
-	}
-	else if (prot & PROT_EXEC) {
-		if (prot & PROT_READ)
-			flProtect = PAGE_EXECUTE_READ;
-		else if (prot & PROT_EXEC)
-			flProtect = PAGE_EXECUTE;
-	}
-	else
-		flProtect = PAGE_READONLY;
-
-	off_t end = length + offset;
-	HANDLE mmap_fd, h;
-	if (fd == -1)
-		mmap_fd = INVALID_HANDLE_VALUE;
-	else
-		mmap_fd = (HANDLE)_get_osfhandle(fd);
-	h = CreateFileMapping(mmap_fd, NULL, flProtect, DWORD_HI(end), DWORD_LO(end), NULL);
-	if (h == NULL)
-		return MAP_FAILED;
-
-	DWORD dwDesiredAccess;
-	if (prot & PROT_WRITE)
-		dwDesiredAccess = FILE_MAP_WRITE;
-	else
-		dwDesiredAccess = FILE_MAP_READ;
-	if (prot & PROT_EXEC)
-		dwDesiredAccess |= FILE_MAP_EXECUTE;
-	if (flags & MAP_PRIVATE)
-		dwDesiredAccess |= FILE_MAP_COPY;
-	void* ret = MapViewOfFile(h, dwDesiredAccess, DWORD_HI(offset), DWORD_LO(offset), length);
-	if (ret == NULL) {
-		CloseHandle(h);
-		ret = MAP_FAILED;
-	}
-	return ret;
+    if (err == 0)
+        return 0;
+    //TODO: implement
+    return err;
 }
 
-/*static*/ void munmap(void* addr, size_t length)
+static DWORD __map_mmap_prot_page(const int prot)
 {
-	UnmapViewOfFile(addr);
-	/* ruh-ro, we leaked handle from CreateFileMapping() ... */
+    DWORD protect = 0;
+
+    if (prot == PROT_NONE)
+        return protect;
+
+    if ((prot & PROT_EXEC) != 0)
+    {
+        protect = ((prot & PROT_WRITE) != 0) ?
+            PAGE_EXECUTE_READWRITE : PAGE_EXECUTE_READ;
+    }
+    else
+    {
+        protect = ((prot & PROT_WRITE) != 0) ?
+            PAGE_READWRITE : PAGE_READONLY;
+    }
+
+    return protect;
 }
 
-#undef DWORD_HI
-#undef DWORD_LO
+static DWORD __map_mmap_prot_file(const int prot)
+{
+    DWORD desiredAccess = 0;
+
+    if (prot == PROT_NONE)
+        return desiredAccess;
+
+    if ((prot & PROT_READ) != 0)
+        desiredAccess |= FILE_MAP_READ;
+    if ((prot & PROT_WRITE) != 0)
+        desiredAccess |= FILE_MAP_WRITE;
+    if ((prot & PROT_EXEC) != 0)
+        desiredAccess |= FILE_MAP_EXECUTE;
+
+    return desiredAccess;
+}
+
+void* mmap(void* addr, size_t len, int prot, int flags, int fildes, off_t off)
+{
+    HANDLE fm, h;
+
+    void* map = MAP_FAILED;
+
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4293)
+#endif
+
+    const DWORD dwFileOffsetLow = (sizeof(off_t) <= sizeof(DWORD)) ?
+        (DWORD)off : (DWORD)(off & 0xFFFFFFFFL);
+    const DWORD dwFileOffsetHigh = (sizeof(off_t) <= sizeof(DWORD)) ?
+        (DWORD)0 : (DWORD)((off >> 32) & 0xFFFFFFFFL);
+    const DWORD protect = __map_mmap_prot_page(prot);
+    const DWORD desiredAccess = __map_mmap_prot_file(prot);
+
+    const off_t maxSize = off + (off_t)len;
+
+    const DWORD dwMaxSizeLow = (sizeof(off_t) <= sizeof(DWORD)) ?
+        (DWORD)maxSize : (DWORD)(maxSize & 0xFFFFFFFFL);
+    const DWORD dwMaxSizeHigh = (sizeof(off_t) <= sizeof(DWORD)) ?
+        (DWORD)0 : (DWORD)((maxSize >> 32) & 0xFFFFFFFFL);
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
+    errno = 0;
+
+    if (len == 0
+        /* Unsupported flag combinations */
+        || (flags & MAP_FIXED) != 0
+        /* Usupported protection combinations */
+        || prot == PROT_EXEC)
+    {
+        errno = EINVAL;
+        return MAP_FAILED;
+    }
+
+    h = ((flags & MAP_ANONYMOUS) == 0) ?
+        (HANDLE)_get_osfhandle(fildes) : INVALID_HANDLE_VALUE;
+
+    if ((flags & MAP_ANONYMOUS) == 0 && h == INVALID_HANDLE_VALUE)
+    {
+        errno = EBADF;
+        return MAP_FAILED;
+    }
+
+    fm = CreateFileMapping(h, NULL, protect, dwMaxSizeHigh, dwMaxSizeLow, NULL);
+
+    if (fm == NULL)
+    {
+        errno = __map_mman_error(GetLastError(), EPERM);
+        return MAP_FAILED;
+    }
+
+    map = MapViewOfFile(fm, desiredAccess, dwFileOffsetHigh, dwFileOffsetLow, len);
+
+    CloseHandle(fm);
+
+    if (map == NULL)
+    {
+        errno = __map_mman_error(GetLastError(), EPERM);
+        return MAP_FAILED;
+    }
+
+    return map;
+}
+
+int munmap(void* addr, size_t len)
+{
+    if (UnmapViewOfFile(addr))
+        return 0;
+
+    errno = __map_mman_error(GetLastError(), EPERM);
+
+    return -1;
+}
+
+int _mprotect(void* addr, size_t len, int prot)
+{
+    DWORD newProtect = __map_mmap_prot_page(prot);
+    DWORD oldProtect = 0;
+
+    if (VirtualProtect(addr, len, newProtect, &oldProtect))
+        return 0;
+
+    errno = __map_mman_error(GetLastError(), EPERM);
+
+    return -1;
+}
+
+int msync(void* addr, size_t len, int flags)
+{
+    if (FlushViewOfFile(addr, len))
+        return 0;
+
+    errno = __map_mman_error(GetLastError(), EPERM);
+
+    return -1;
+}
+
+int _mlock(const void* addr, size_t len)
+{
+    if (VirtualLock((LPVOID)addr, len))
+        return 0;
+
+    errno = __map_mman_error(GetLastError(), EPERM);
+
+    return -1;
+}
+
+int _munlock(const void* addr, size_t len)
+{
+    if (VirtualUnlock((LPVOID)addr, len))
+        return 0;
+
+    errno = __map_mman_error(GetLastError(), EPERM);
+
+    return -1;
+}
 
 #endif
