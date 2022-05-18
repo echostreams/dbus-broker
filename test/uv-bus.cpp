@@ -1,7 +1,7 @@
 #include <systemd/sd-bus.h>
-#include <systemd/sd-daemon.h>
 #include <uv.h>
 #include <assert.h>
+#include <poll.h>
 
 typedef struct {
 	uv_poll_t connection;
