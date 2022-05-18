@@ -377,3 +377,8 @@ target_link_libraries(test-user libbus libcdvar libcrbtree libcutf8)
 if(WIN32)
 	target_link_libraries(test-user ws2_32)
 endif()
+
+add_executable(uv-bus
+	"test/uv-bus.cpp"
+)
+target_link_libraries(uv-bus uv_a libsystemd-mini)

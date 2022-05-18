@@ -263,7 +263,7 @@ int main(int argc, char** argv) {
     WSADATA wsaData;
     UINT winStatus = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (winStatus != ERROR_SUCCESS) {
-        fwprintf(L"\nFailed to open winsock. Error %d", winStatus);
+        fwprintf(stderr, L"\nFailed to open winsock. Error %d", winStatus);
         return 1;
     }
 
