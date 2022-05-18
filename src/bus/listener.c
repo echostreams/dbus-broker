@@ -59,7 +59,7 @@ static int listener_dispatch(DispatchFile *file) {
             u_long iMode = 1;
             iResult = ioctlsocket(fd, FIONBIO, &iMode);
             if (iResult != NO_ERROR)
-                printf("ioctlsocket failed with error: %d\n", iResult);
+                fprintf(stderr, "ioctlsocket failed with error: %d\n", iResult);
         }
 #else
         fd = accept4(listener->socket_fd, NULL, NULL, SOCK_CLOEXEC | SOCK_NONBLOCK);

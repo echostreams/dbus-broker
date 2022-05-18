@@ -72,7 +72,7 @@
 //#include <rcutils/logging_macros.h>
 #ifndef RCUTILS_LOG_ERROR_NAMED
 #define RCUTILS_LOG_ERROR_NAMED(name, format) \
-        printf("%s\n", format)
+        fprintf(stderr, "%s\n", format)
 #endif
 
 

@@ -135,7 +135,7 @@ static int bus_socket_write_auth(sd_bus *b) {
 
         if (b->prefer_writev) {
             k = writev(b->output_fd, b->auth_iovec + b->auth_index, ELEMENTSOF(b->auth_iovec) - b->auth_index);
-            printf(">>  writev: %ld\n", k);
+            fprintf(stderr, ">>  writev: %zd\n", k);
         }
         else {
 #ifdef WIN32
@@ -377,7 +377,7 @@ static int bus_socket_auth_write(sd_bus *b, const char *t) {
 
         l = strlen(t);
 
-        printf("    > %.*s\n", (int)l, t);
+        fprintf(stderr, "    > %.*s\n", (int)l, t);
 
         p = malloc(b->auth_iovec[0].iov_len + l);
         if (!p)
@@ -442,7 +442,7 @@ static int bus_socket_auth_verify_server(sd_bus *b) {
 
                 l = e - line;
 
-                printf("    < %.*s\n", (int)l, line);
+                fprintf(stderr, "    < %.*s\n", (int)l, line);
 
                 if (line_begins(line, l, "AUTH ANONYMOUS")) {
 
@@ -1137,7 +1137,7 @@ int bus_socket_write_message(sd_bus *bus, sd_bus_message *m, size_t *idx) {
 
         if (bus->prefer_writev) {
             k = writev(bus->output_fd, iov, m->n_iovec);
-            printf(">> writev: %ld\n", k);
+            fprintf(stderr, ">> writev: %zd\n", k);
         }
         else {
 #ifdef WIN32

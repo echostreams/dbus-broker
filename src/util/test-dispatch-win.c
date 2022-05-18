@@ -203,7 +203,7 @@ static void test_uds_edge(unsigned int run) {
 
     //r = send(s[0], b, sizeof(b), MSG_DONTWAIT | MSG_NOSIGNAL);
     r = send(s[0], b, sizeof(b), 0);
-    printf("  send r=%d, errno=%d, wsa_err=%d\n", r, errno, WSAGetLastError());
+    fprintf(stderr, "  send r=%d, errno=%d, wsa_err=%d\n", r, errno, WSAGetLastError());
     //c_assert(r < 0 && errno == EPIPE);
 
     /* fetch EPOLLOUT which was set by shutdown(2) and clear it */
@@ -225,7 +225,7 @@ static void test_uds_edge(unsigned int run) {
         /* if @run is 0, we use recv(2) to dequeue data */
         //r = recv(s[1], b, sizeof(b), MSG_DONTWAIT);
         r = recv(s[1], b, sizeof(b), 0);
-        printf("  recv r=%d, errno=%d, wsa_err=%d\n", r, errno, WSAGetLastError());
+        fprintf(stderr, "  recv r=%d, errno=%d, wsa_err=%d\n", r, errno, WSAGetLastError());
         c_assert(r == sizeof(b));
 
         q_assert(s[0], false, false);
@@ -263,7 +263,7 @@ int main(int argc, char** argv) {
     WSADATA wsaData;
     UINT winStatus = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (winStatus != ERROR_SUCCESS) {
-        wprintf(L"\nFailed to open winsock. Error %d", winStatus);
+        fwprintf(L"\nFailed to open winsock. Error %d", winStatus);
         return 1;
     }
 

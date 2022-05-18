@@ -22,6 +22,7 @@ struct Broker {
 #ifdef WIN32
     HANDLE thread;
     struct sockaddr address;
+    HANDLE event;
 #else
         pthread_t thread;
         struct sockaddr_un address;
@@ -77,3 +78,12 @@ void util_broker_consume_method_error(sd_bus *bus, const char *name);
 void util_broker_consume_signal(sd_bus *bus, const char *interface, const char *member);
 
 C_DEFINE_CLEANUP(Broker *, util_broker_free);
+
+#ifdef WIN32
+void win_broker_new(Broker** brokerp);
+void win_fork_broker(sd_bus** busp, sd_event* event, int listener_fd, pid_t* pidp, struct sockaddr* addr, socklen_t addrlen);
+void win_broker_spawn(Broker* broker);
+void win_broker_terminate(Broker* broker);
+Broker* win_broker_free(Broker* broker);
+C_DEFINE_CLEANUP(Broker*, win_broker_free);
+#endif

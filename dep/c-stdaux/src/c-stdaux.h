@@ -522,7 +522,9 @@ static inline void *c_free(void *p) {
 static inline int c_close(int fd) {
         if (fd >= 0)
 #ifdef WIN32
-                _close(fd);
+                if (_close(fd) == -1) {
+                    fprintf(stderr, "_close(%d) failed: [%d]%s\n", fd, errno, strerror(errno));
+                }
 #else
                 close(fd);
 #endif

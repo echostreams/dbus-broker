@@ -59,7 +59,7 @@ void dump_hex(const void* data, size_t size) {
     size_t i, j;
     ascii[16] = '\0';
     for (i = 0; i < size; ++i) {
-        printf("%02X ", ((unsigned char*)data)[i]);
+        fprintf(stderr, "%02X ", ((unsigned char*)data)[i]);
         if (((unsigned char*)data)[i] >= ' ' && ((unsigned char*)data)[i] <= '~') {
             ascii[i % 16] = ((unsigned char*)data)[i];
         }
@@ -67,19 +67,19 @@ void dump_hex(const void* data, size_t size) {
             ascii[i % 16] = '.';
         }
         if ((i + 1) % 8 == 0 || i + 1 == size) {
-            printf(" ");
+            fprintf(stderr, " ");
             if ((i + 1) % 16 == 0) {
-                printf("|  %s \n", ascii);
+                fprintf(stderr, "|  %s \n", ascii);
             }
             else if (i + 1 == size) {
                 ascii[(i + 1) % 16] = '\0';
                 if ((i + 1) % 16 <= 8) {
-                    printf(" ");
+                    fprintf(stderr, " ");
                 }
                 for (j = (i + 1) % 16; j < 16; ++j) {
-                    printf("   ");
+                    fprintf(stderr, "   ");
                 }
-                printf("|  %s \n", ascii);
+                fprintf(stderr, "|  %s \n", ascii);
             }
         }
     }
@@ -292,7 +292,7 @@ void socket_deinit(Socket *socket) {
 
 static void socket_might_reset(Socket *socket) {
 
-    printf("  reset: %d, hup_in: %d, hup_out: %d, out.pending: %d, in.queue: %d\n",
+    fprintf(stderr, "  reset: %d, hup_in: %d, hup_out: %d, out.pending: %d, in.queue: %d\n",
         socket->reset,
         socket->hup_in,
         socket->hup_out,
@@ -351,7 +351,7 @@ static void socket_shutdown_now(Socket *socket) {
                 r = shutdown(socket->fd, SD_SEND);
                 if (r == SOCKET_ERROR) {
                     DWORD err = WSAGetLastError();
-                    printf(" winsock shutdown failed with %lu:%s\n", err, strerror(err));
+                    fprintf(stderr, " winsock shutdown failed with %lu:%s\n", err, strerror(err));
                 }
 #else
                 r = shutdown(socket->fd, SHUT_WR);
@@ -611,7 +611,7 @@ static int socket_recvmsg(Socket *socket,
 #else
         l = recv(socket->fd, buffer + *from, to - *from, 0);
 
-        printf(" broker recv[1]: %zd\n", l);
+        fprintf(stderr, " broker recv[1]: %zd\n", l);
         if (l > 0) {
             dump_hex(buffer + *from, l);
         }        
@@ -629,7 +629,7 @@ static int socket_recvmsg(Socket *socket,
 
 #ifdef WIN32
             DWORD err = WSAGetLastError();
-            printf("  broker recv err %ld:%s %d\n", err, strerror(err), errno);
+            fprintf(stderr, "  broker recv err %ld:%s %d\n", err, strerror(err), errno);
             switch (err) {
             case WSAEWOULDBLOCK:
                 return 0;

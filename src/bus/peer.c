@@ -288,7 +288,7 @@ int peer_new_with_fd(Peer **peerp,
         ucred.uid = getuid();
         ucred.gid = -1;
 #endif
-        printf("  [ucred] pid: %d, gid: %d, uid: %d\n", ucred.pid, ucred.gid, ucred.uid);
+        fprintf(stderr, "  [ucred] pid: %d, gid: %d, uid: %d\n", ucred.pid, ucred.gid, ucred.uid);
 
         r = user_registry_ref_user(&bus->users, &user, ucred.uid);
         if (r < 0)

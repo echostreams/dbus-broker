@@ -190,7 +190,7 @@ void dispatch_file_select(DispatchFile *file, uint32_t mask) {
 void dispatch_file_deselect(DispatchFile *file, uint32_t mask) {
         c_assert(!(mask & ~file->kernel_mask));
 
-        printf("   dispatch_file_deselect: fd=%d, events=%d, user_mask=%d, kernel_mask=%d\n", 
+        fprintf(stderr, "   dispatch_file_deselect: fd=%d, events=%d, user_mask=%d, kernel_mask=%d\n", 
             file->fd,
             file->events,
             file->user_mask,

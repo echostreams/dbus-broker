@@ -21,7 +21,7 @@ size_t page_size(void) {
         SYSTEM_INFO si;
         GetSystemInfo(&si);
 
-        printf("%u", si.dwPageSize);
+        fprintf(stderr, "%lu", si.dwPageSize);
 
         r = si.dwPageSize;
 #else

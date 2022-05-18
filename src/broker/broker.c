@@ -50,7 +50,182 @@ static int broker_dispatch_signals(DispatchFile *file) {
         return DISPATCH_E_EXIT;
 }
 
-int broker_new(Broker **brokerp, const char *machine_id, int log_fd, int controller_fd, uint64_t max_bytes, uint64_t max_fds, uint64_t max_matches, uint64_t max_objects) {
+#ifdef WIN32
+
+int unhexchar(char c) {
+
+    if (c >= '0' && c <= '9')
+        return c - '0';
+
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
+
+    return -EINVAL;
+}
+
+static int parse_address_key(const char** p, const char* key, char** value) {
+    _c_cleanup_(c_freep) char* r = NULL;
+    size_t l, n = 0;
+    const char* a;
+
+    assert(p);
+    assert(*p);
+    assert(value);
+
+    if (key) {
+        l = strlen(key);
+        if (strncmp(*p, key, l) != 0)
+            return 0;
+
+        if ((*p)[l] != '=')
+            return 0;
+
+        if (*value)
+            return -EINVAL;
+
+        a = *p + l + 1;
+    }
+    else
+        a = *p;
+
+    //while (!IN_SET(*a, ';', ',', 0)) 
+    while (!(*a == ';' || *a == ',' || *a == 0))
+    {
+        char c;
+
+        if (*a == '%') {
+            int x, y;
+
+            x = unhexchar(a[1]);
+            if (x < 0)
+                return x;
+
+            y = unhexchar(a[2]);
+            if (y < 0)
+                return y;
+
+            c = (char)((x << 4) | y);
+            a += 3;
+        }
+        else {
+            c = *a;
+            a++;
+        }
+
+        if (!(r = realloc(r, n + 2)))
+            return -ENOMEM;
+
+        r[n++] = c;
+    }
+
+    if (!r) {
+        r = strdup("");
+        if (!r)
+            return -ENOMEM;
+    }
+    else
+        r[n] = 0;
+
+    if (*a == ',')
+        a++;
+
+    *p = a;
+
+    //free_and_replace(*value, r);
+    free(*value);
+    *value = r;
+    r = NULL;
+
+    return 1;
+}
+
+static void skip_address_key(const char** p) {
+    assert(p);
+    assert(*p);
+
+    *p += strcspn(*p, ",");
+
+    if (**p == ',')
+        (*p)++;
+}
+
+static int parse_tcp_address(const char** p, char **guid, struct sockaddr *tcpaddr, size_t *addrlen) {
+    _c_cleanup_(c_freep) char *host = NULL, *port = NULL, *family = NULL;
+    int r;
+    struct addrinfo* result, hints = {
+            .ai_socktype = SOCK_STREAM,
+    };
+
+    assert(p);
+    assert(*p);
+    //assert(guid);
+
+    if ((*p)[0] != 't' || (*p)[1] != 'c' || (*p)[2] != 'p' || (*p)[3] != ':')
+        return -EINVAL;
+    
+    (*p) += 4;
+
+    //while (!IN_SET(**p, 0, ';')) {
+    while (!(**p == 0 || **p == ';')) {
+        if (guid)
+        {
+            r = parse_address_key(p, "guid", guid);
+            if (r < 0)
+                return r;
+            else if (r > 0)
+                continue;
+        }
+        r = parse_address_key(p, "host", &host);
+        if (r < 0)
+            return r;
+        else if (r > 0)
+            continue;
+
+        r = parse_address_key(p, "port", &port);
+        if (r < 0)
+            return r;
+        else if (r > 0)
+            continue;
+
+        r = parse_address_key(p, "family", &family);
+        if (r < 0)
+            return r;
+        else if (r > 0)
+            continue;
+
+        skip_address_key(p);
+    }
+
+    if (!host || !port)
+        return -EINVAL;
+
+    if (family) {
+        hints.ai_family = strcmp(family, "ipv4") == 0 ? AF_INET :
+            strcmp(family, "ipv6") == 0 ? AF_INET6 : AF_UNSPEC;
+        if (hints.ai_family == AF_UNSPEC)
+            return -EINVAL;
+    }
+
+    r = getaddrinfo(host, port, &hints, &result);
+    if (r != 0)
+        return -EADDRNOTAVAIL;
+
+    memcpy(tcpaddr, result->ai_addr, result->ai_addrlen);
+    *addrlen = result->ai_addrlen;
+
+    freeaddrinfo(result);
+
+    return 0;
+}
+
+#endif
+
+int broker_new(Broker **brokerp, const char *machine_id, int log_fd, int controller_fd, 
+    uint64_t max_bytes, uint64_t max_fds, uint64_t max_matches, uint64_t max_objects, const char *addr) 
+{
         _c_cleanup_(broker_freep) Broker *broker = NULL;
         struct ucred ucred;
         socklen_t z;
@@ -214,46 +389,35 @@ int broker_new(Broker **brokerp, const char *machine_id, int log_fd, int control
         SOCKET listener_fd = socket(AF_INET, SOCK_STREAM, 0);
         c_assert(listener_fd >= 0);
 
-        struct addrinfo hints, * res;
-        // Before using hint you have to make sure that the data structure is empty 
-        memset(&hints, 0, sizeof(hints));
-        // Set the attribute for hint
-        hints.ai_family = AF_INET;
-        hints.ai_socktype = SOCK_STREAM; // TCP Socket SOCK_DGRAM 
-        hints.ai_protocol = IPPROTO_TCP;
-        hints.ai_flags = AI_PASSIVE;
+        struct sockaddr ai_addr;
+        size_t ai_addrlen;        
 
-        // Fill the res data structure and make sure that the results make sense. 
-        int status = getaddrinfo(NULL, "8080", &hints, &res);
-        if (status != 0)
-        {
-            fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(status));
-            return -1;
-        }
+        parse_tcp_address(&addr, NULL, &ai_addr, &ai_addrlen);
+
         /*************************************************************/
         /* Set socket to be nonblocking. All of the sockets for      */
         /* the incoming connections will also be nonblocking since   */
         /* they will inherit that state from the listening socket.   */
         /*************************************************************/
         u_long iMode = 1;
-        status = ioctlsocket(listener_fd, FIONBIO, &iMode);
+        int status = ioctlsocket(listener_fd, FIONBIO, &iMode);
         if (status != NO_ERROR) {
-            printf("ioctlsocket failed with error: %d\n", status);
+            fprintf(stderr, "ioctlsocket failed with error: %d\n", status);
         }
 
         if (!SetHandleInformation((HANDLE)listener_fd, HANDLE_FLAG_INHERIT, 0))
         {
-            printf("SetHandleInformation failed with error: %lu\n", GetLastError());
+            fprintf(stderr, "SetHandleInformation failed with error: %lu\n", GetLastError());
         }
 
-        r = bind(listener_fd, res->ai_addr, res->ai_addrlen);
+        r = bind(listener_fd, &ai_addr, ai_addrlen);
         c_assert(r >= 0);
 
+        /*
         char bindaddr[64];
         uint32_t a;
-        struct sockaddr_in* sa = (struct sockaddr_in*)res->ai_addr;
+        struct sockaddr_in* sa = (struct sockaddr_in*)hints.ai_addr;
         a = be32toh(sa->sin_addr.s_addr);
-
         
         r = sprintf(bindaddr,
                 "%u.%u.%u.%u:%u",
@@ -261,7 +425,7 @@ int broker_new(Broker **brokerp, const char *machine_id, int log_fd, int control
                 be16toh(sa->sin_port));
 
         printf("I am now accepting connections at %s ...\n", bindaddr);
-        freeaddrinfo(res);
+        */
 
         r = listen(listener_fd, 256);
         c_assert(r >= 0);

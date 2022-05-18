@@ -321,12 +321,17 @@ if(WIN32)
 
 	add_executable(dbus-launch
 		"test/dbus/dbus-launch-win.c"
-		#"test/dbus/util-broker.c"
+		"test/dbus/util-broker-win.c"
 	)
-	target_link_libraries(dbus-launch libsystemd-mini ws2_32 iphlpapi)
+	add_executable(test-broker
+		"test/dbus/test-broker-win.c"
+		"test/dbus/util-broker-win.c"
+	)
 	add_executable(test-dispatch
 		"src/util/test-dispatch-win.c"
-	)
+	)	
+	target_link_libraries(dbus-launch libsystemd-mini ws2_32 iphlpapi)
+	target_link_libraries(test-broker libsystemd-mini ws2_32 iphlpapi)
 
 else()
 
@@ -340,11 +345,12 @@ else()
 	)
 	add_executable(test-dispatch
 		"src/util/test-dispatch.c"
-	)
-	target_link_libraries(test-broker libsystemd-mini pthread)
+	)	
 	target_link_libraries(dbus-launch libsystemd-mini pthread)
+	target_link_libraries(test-broker libsystemd-mini pthread)
 
 endif()
+
 target_link_libraries(test-dispatch libbus uv_a)
 
 add_subdirectory("libuv-1.44.1")

@@ -82,7 +82,7 @@ int log_dispatch_internal(
     const char* extra,
     char* buffer) {
 
-    printf("%s\n", buffer);
+    fprintf(stderr, "%s\n", buffer);
     return 0;
    
 }
@@ -201,7 +201,7 @@ static void log_assert(
     log_abort_msg = buffer;
 
     //log_dispatch_internal(level, 0, file, line, func, NULL, NULL, NULL, NULL, buffer);
-    printf("%s\n", buffer);
+    fprintf(stderr, "%s\n", buffer);
 }
 
 

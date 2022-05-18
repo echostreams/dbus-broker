@@ -525,7 +525,7 @@ void util_broker_spawn(Broker *broker) {
 
                 {
                         struct sockaddr_un* un = (struct sockaddr_un*)&broker->address;
-                        printf("binding to unix:abstract=%s\n", un->sun_path + 1);
+                        fprintf(stderr, "binding to unix:abstract=%s\n", un->sun_path + 1);
                 }
 
                 r = listen(broker->listener_fd, 256);

@@ -66,11 +66,11 @@ int fd_nonblock(int fd, bool nonblock) {
 	u_long iMode = 1;
 	int iResult = ioctlsocket(fd, FIONBIO, &iMode);
 	if (iResult != NO_ERROR) {
-		printf("ioctlsocket failed with error: %d\n", iResult);
+		fprintf(stderr, "ioctlsocket failed with error: %d\n", iResult);
 		return RET_NERRNO(iResult);
 	}
 
-	printf("Setting fd %d to non-blocking...\n", fd);
+	fprintf(stderr, "Setting fd %d to non-blocking...\n", fd);
 
 	return 0;
 
@@ -197,7 +197,7 @@ int fd_get_path(int fd, char** ret) {
 				fwprintf(stderr, L"Failed to retrieve address of peer: %d\n", r);
 			}
 			else {
-				fwprintf(stdout, L"Address: %u.%u.%u.%u Port: %hu\n",
+				fwprintf(stderr, L"Address: %u.%u.%u.%u Port: %hu\n",
 					sockAddr.sin_addr.S_un.S_un_b.s_b1,
 					sockAddr.sin_addr.S_un.S_un_b.s_b2,
 					sockAddr.sin_addr.S_un.S_un_b.s_b3,

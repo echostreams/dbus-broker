@@ -227,7 +227,7 @@ int connection_dispatch(Connection *connection, uint32_t events) {
         for (i = 0; i < C_ARRAY_SIZE(interest); ++i) {
                 if (events & interest[i]) {
                         r = socket_dispatch(&connection->socket, interest[i]);
-                        printf(" connection_dispatch: e=%d i=%d r=%d\n", events, interest[i], r);
+                        fprintf(stderr, " connection_dispatch: e=%d i=%d r=%d\n", events, interest[i], r);
                         if (!r)
                                 dispatch_file_clear(&connection->socket_file, interest[i]);
                         else if (r == SOCKET_E_LOST_INTEREST)

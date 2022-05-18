@@ -292,10 +292,10 @@ int introspect_finish(struct introspect *i, char **ret) {
         if (!fSuccess)
         {
             // Handle the error.
-            printf("DeleteFile() failed, error %lu\n", GetLastError());
+            fprintf(stderr, "DeleteFile() failed, error %lu\n", GetLastError());
         }
         else {
-            printf("delete temp file: %s\n", i->introspection);
+            fprintf(stderr, "delete temp file: %s\n", i->introspection);
         }
 
         free(i->introspection);

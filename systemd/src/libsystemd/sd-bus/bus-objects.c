@@ -1937,7 +1937,7 @@ static int add_object_vtable_internal(
                         m->member = v->x.method.member;
                         m->vtable = v;
 
-                        printf("adding method: %s\n", m->member);
+                        fprintf(stderr, "adding method: %s\n", m->member);
 
                         r = hashmap_put(bus->vtable_methods, m, m);
                         if (r < 0) {
@@ -1987,7 +1987,7 @@ static int add_object_vtable_internal(
                         m->member = v->x.property.member;
                         m->vtable = v;
 
-                        printf("adding property: %s\n", m->member);
+                        fprintf(stderr, "adding property: %s\n", m->member);
 
                         r = hashmap_put(bus->vtable_properties, m, m);
                         if (r < 0) {

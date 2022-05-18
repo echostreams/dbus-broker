@@ -4019,7 +4019,7 @@ static int build_struct_offsets(
                 offset = m->rindex + x;
                 if (offset < start) {
                     //return log_debug_errno(SYNTHETIC_ERRNO(EBADMSG),
-                    printf(
+                    fprintf(stderr,
                         "For type %s with alignment %zu, message specifies offset %zu which is smaller than previous end %zu + alignment = %zu",
                         t, align,
                         offset,

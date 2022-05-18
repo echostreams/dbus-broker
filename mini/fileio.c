@@ -198,7 +198,7 @@ extern "C" {
     void PrintError(LPCTSTR errDesc)
     {
         LPCTSTR errMsg = ErrorMessage(GetLastError());
-        _tprintf(TEXT("\n** ERROR ** %s: %s\n"), errDesc, errMsg);
+        _ftprintf(stderr, TEXT("\n** ERROR ** %s: %s\n"), errDesc, errMsg);
         LocalFree((LPVOID)errMsg);
     }
 #endif
@@ -251,7 +251,7 @@ extern "C" {
             return NULL;
         }
 
-        printf("create temp file: %s\n", szTempFileName);
+        fprintf(stderr, "create temp file: %s\n", szTempFileName);
 
         FILE* f = fopen(szTempFileName, "w+");
         if (!f)

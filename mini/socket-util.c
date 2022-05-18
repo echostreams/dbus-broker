@@ -55,7 +55,7 @@
 typedef unsigned int gid_t;
 #define ERR(e) \
         { \
-        printf("%s:%s failed: %d [%s@%ld]\n",__FUNCTION__,e,WSAGetLastError(),__FILE__,__LINE__); \
+        fprintf(stderr, "%s:%s failed: %d [%s@%ld]\n",__FUNCTION__,e,WSAGetLastError(),__FILE__,__LINE__); \
         }
 #define	EXFULL		54	/* Exchange full */
 #endif
@@ -377,20 +377,20 @@ ssize_t recvmsg_safe(int sockfd, struct msghdr* msg, int flags) {
 
     int iResult = recv(sockfd, wmsg->lpBuffers->buf, wmsg->lpBuffers->len, /*flags*/0);
     if (iResult > 0) {
-        printf("Bytes received: %d\n", iResult);
+        fprintf(stderr, "Bytes received: %d\n", iResult);
         int i;
         for (i = 0; i < iResult; i++) {
-            printf("%02x ", wmsg->lpBuffers->buf[i]);
+            fprintf(stderr, "%02x ", wmsg->lpBuffers->buf[i]);
         }
-        printf("\n");
+        fprintf(stderr, "\n");
     }
     else if (iResult == 0) {
-        printf("Connection closed\n");
+        fprintf(stderr, "Connection closed\n");
         iResult = -ECONNRESET;
     }
     else {
         int e = WSAGetLastError();
-        printf("recv failed: %d, buf len: %lu\n", e, wmsg->lpBuffers->len);
+        fprintf(stderr, "recv failed: %d, buf len: %lu\n", e, wmsg->lpBuffers->len);
         if (e == WSAEWOULDBLOCK) {
             /*This error is returned from operations on nonblocking sockets 
             that cannot be completed immediately, for example recv when no data is queued to be read from the socket. 

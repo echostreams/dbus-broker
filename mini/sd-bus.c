@@ -1432,7 +1432,7 @@ _public_ int sd_bus_call(
 
     i = bus->rqueue_size;
 
-    printf(" >> sd_bus_call: requeue_size %zu\n", bus->rqueue_size);
+    fprintf(stderr, " >> sd_bus_call: requeue_size %zu\n", bus->rqueue_size);
     
     r = bus_seal_message(bus, m, usec);
     if (r < 0)

@@ -103,7 +103,7 @@ ctype_codeset(void)
     codeset = buf;
     codeset[0] = '\0';
 
-    printf("locale: %s\n", locale);
+    fprintf(stderr, "locale: %s\n", locale);
 
     if (locale[0])
     {
@@ -172,7 +172,7 @@ bool is_locale_utf8() {
 #ifdef WIN32
     //set = ctype_codeset();
     UINT cp = GetConsoleOutputCP();
-    printf("GetConsoleOutputCP: %d\n", cp);
+    fprintf(stderr, "GetConsoleOutputCP: %d\n", cp);
     if (cp == CP_UTF8)
         cached_answer = true;
     else

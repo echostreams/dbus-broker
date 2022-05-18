@@ -24,6 +24,7 @@ bool main_arg_audit = false;
 int main_arg_controller = 3;
 int main_arg_log = -1;
 const char *main_arg_machine_id = NULL;
+const char* listener_address = NULL; // for windows
 uint64_t main_arg_max_bytes = 512 * 1024 * 1024;
 uint64_t main_arg_max_fds = 128;
 uint64_t main_arg_max_matches = 16 * 1024;
@@ -91,7 +92,7 @@ SOCKET ConvertProcessSocket(SOCKET oldsocket, DWORD source_pid)
         return INVALID_SOCKET;
     }
     else {
-        fprintf(stderr, "DuplicateHandle(%llu -> %d)\n", oldsocket, newhandle);
+        fprintf(stderr, "DuplicateHandle(%llu -> %p)\n", oldsocket, newhandle);
     }
     CloseHandle(source_handle);
 
@@ -99,10 +100,10 @@ SOCKET ConvertProcessSocket(SOCKET oldsocket, DWORD source_pid)
     u_long iMode = 1;
     iResult = ioctlsocket((SOCKET)newhandle, FIONBIO, &iMode);
     if (iResult != NO_ERROR) {
-        printf("ioctlsocket failed with error: %d\n", iResult);
+        fprintf(stderr, "ioctlsocket failed with error: %d\n", iResult);
     }
     if (!SetHandleInformation((HANDLE)newhandle, HANDLE_FLAG_INHERIT, 0)) {
-        printf("SetHandleInformation failed with error: %lu\n", GetLastError());
+        fprintf(stderr, "SetHandleInformation failed with error: %lu\n", GetLastError());
     }
 
     return (SOCKET)newhandle;
@@ -277,7 +278,7 @@ int CreateWinControllerSocket()
     u_long iMode = 1;
     status = ioctlsocket(listener_fd, FIONBIO, &iMode);
     if (status != NO_ERROR) {
-        printf("ioctlsocket failed with error: %d\n", status);
+        fprintf(stderr, "ioctlsocket failed with error: %d\n", status);
     }
 
     r = bind(listener_fd, res->ai_addr, res->ai_addrlen);
@@ -293,7 +294,7 @@ int CreateWinControllerSocket()
         a >> 24, (a >> 16) & 0xFF, (a >> 8) & 0xFF, a & 0xFF,
         be16toh(sa->sin_port));
 
-    printf("I am now accepting connections at %s ...\n", bindaddr);
+    fprintf(stderr, "I am now accepting connections at %s ...\n", bindaddr);
     freeaddrinfo(res);
 
     r = listen(listener_fd, 256);
@@ -320,6 +321,7 @@ static void help(void) {
                "     --max-matches MATCHES      Maximum number of match rules each user may allocate in the broker\n"
                "     --max-objects OBJECTS      Maximum total number of names, peers, pending replies, etc each user may allocate in the broker\n"
 #ifdef WIN32
+               "     --address                  Listener address"
                , __argv && __argv[0] ? __argv[0] : "?"                
 #else
                , program_invocation_short_name
@@ -339,6 +341,9 @@ static int parse_argv(int argc, char *argv[]) {
                 ARG_MAX_FDS,
                 ARG_MAX_MATCHES,
                 ARG_MAX_OBJECTS,
+#ifdef WIN32
+                ARG_ADDRESS,
+#endif
         };
         static const struct option options[] = {
                 { "help",               no_argument,            NULL,   'h'                     },
@@ -351,6 +356,9 @@ static int parse_argv(int argc, char *argv[]) {
                 { "max-fds",            required_argument,      NULL,   ARG_MAX_FDS             },
                 { "max-matches",        required_argument,      NULL,   ARG_MAX_MATCHES         },
                 { "max-objects",        required_argument,      NULL,   ARG_MAX_OBJECTS         },
+#ifdef WIN32
+                { "address",            required_argument,      NULL,   ARG_ADDRESS             },
+#endif  
                 {}
         };
         int r, c;
@@ -458,6 +466,12 @@ static int parse_argv(int argc, char *argv[]) {
 
                         break;
 
+#ifdef WIN32
+                case ARG_ADDRESS:
+                        
+                        listener_address = optarg;
+                        break;
+#endif
                 case '?':
                         /* getopt_long() prints warning */
                         return MAIN_FAILED;
@@ -587,7 +601,8 @@ static int run(void) {
         _c_cleanup_(broker_freep) Broker *broker = NULL;
         int r;
 
-        r = broker_new(&broker, main_arg_machine_id, main_arg_log, main_arg_controller, main_arg_max_bytes, main_arg_max_fds, main_arg_max_matches, main_arg_max_objects);
+        r = broker_new(&broker, main_arg_machine_id, main_arg_log, main_arg_controller, 
+            main_arg_max_bytes, main_arg_max_fds, main_arg_max_matches, main_arg_max_objects, listener_address);
         if (!r)
                 r = broker_run(broker);
 
@@ -598,14 +613,14 @@ int main(int argc, char **argv) {
 
 #ifdef WIN32
 
-        policy_c_dvar_test();
+        //policy_c_dvar_test();
 
         WSADATA wsaData;
         int iResult;
         // Initialize Winsock
         iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
         if (iResult != 0) {
-                printf("WSAStartup failed: %d\n", iResult);
+                fprintf(stderr, "WSAStartup failed: %d\n", iResult);
                 return 1;
         }
 #endif
