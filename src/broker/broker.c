@@ -386,7 +386,8 @@ int broker_new(Broker **brokerp, const char *machine_id, int log_fd, int control
          * and remember it in @broker. Spawn a thread, which will then
          * run and babysit the broker.
          */
-        SOCKET listener_fd = socket(AF_INET, SOCK_STREAM, 0);
+        //SOCKET listener_fd = socket(AF_INET, SOCK_STREAM, 0);
+        SOCKET listener_fd = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
         c_assert(listener_fd >= 0);
 
         struct sockaddr ai_addr;

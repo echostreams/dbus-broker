@@ -61,6 +61,10 @@ static int listener_dispatch(DispatchFile *file) {
             if (iResult != NO_ERROR)
                 fprintf(stderr, "ioctlsocket failed with error: %d\n", iResult);
         }
+        if (!SetHandleInformation((HANDLE)fd, HANDLE_FLAG_INHERIT, 0))
+        {
+            fprintf(stderr, "SetHandleInformation failed with error: %lu\n", GetLastError());
+        }
 #else
         fd = accept4(listener->socket_fd, NULL, NULL, SOCK_CLOEXEC | SOCK_NONBLOCK);
 #endif

@@ -10,6 +10,8 @@
 #include <Windows.h>
 #include <WinSock2.h>
 #include <Ws2tcpip.h>
+#include <mstcpip.h>
+#include <ws2ipdef.h>
 #include <iphlpapi.h>
 #include <Tcpestats.h>
 #include <stdlib.h>
@@ -35,6 +37,19 @@ int uv_socketpair(int type,
 // Need to link with Ws2_32.lib
 #pragma comment(lib, "ws2_32.lib")
 
+int epicsSocketUnsentCount(SOCKET sock) {
+    #ifdef SIO_TCP_INFO
+        /* Windows 10 Version 1703 / Server 2016 */
+        DWORD infoVersion = 0, bytesReturned;
+    TCP_INFO_v0 tcpInfo;
+    int status;
+    if ((status = WSAIoctl(sock, SIO_TCP_INFO, &infoVersion, sizeof(infoVersion),
+        &tcpInfo, sizeof(tcpInfo), &bytesReturned, NULL, NULL)) == 0)
+        return tcpInfo.BytesInFlight;
+    #endif
+        return -1;
+}
+
 static void q_assert(int s, bool has_in, bool has_out) {
     int r;
     u_long v;
@@ -48,6 +63,9 @@ static void q_assert(int s, bool has_in, bool has_out) {
     r = ioctlsocket(s, FIONREAD, &v);
     c_assert(r >= 0);
     c_assert(!v == !has_in);
+
+    fprintf(stderr, "[%d]SIOCINQ : %lu\n", s, v);
+    fprintf(stderr, "[%d]SIOCOUTQ: %d\n\n", s, epicsSocketUnsentCount(s));
 
     /*
     //r = ioctl(s, SIOCOUTQ, &v);
@@ -91,6 +109,7 @@ static void test_uds_edge(unsigned int run) {
 
     //r = socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0, s);
     r = uv_socketpair(SOCK_STREAM, 0, s, UV_NONBLOCK_PIPE, UV_NONBLOCK_PIPE);
+    fprintf(stderr, "socketpair: %d : %d\n", s[0], s[1]);
     c_assert(!r);
 
     r = dispatch_file_init(&f, &c, NULL, s[0], EPOLLOUT, 0);
@@ -111,6 +130,7 @@ static void test_uds_edge(unsigned int run) {
 
     //r = send(s[0], b, sizeof(b), MSG_DONTWAIT | MSG_NOSIGNAL);
     r = send(s[0], b, sizeof(b), 0);
+    fprintf(stderr, ">> send s=%d, r=%d, errno=%d, wsa_err=%d\n", s[0], r, errno, WSAGetLastError());
     c_assert(r == sizeof(b));
 
     q_assert(s[0], false, true);
@@ -133,6 +153,7 @@ static void test_uds_edge(unsigned int run) {
     /* receive data and verify socket becomes pollable */
 
     r = recv(s[1], b, sizeof(b), 0/*MSG_DONTWAIT*/);
+    fprintf(stderr, "<< recv s=%d, r=%d, errno=%d, wsa_err=%d\n", s[1], r, errno, WSAGetLastError());
     c_assert(r == sizeof(b));
 
     q_assert(s[0], false, false);
@@ -158,6 +179,7 @@ static void test_uds_edge(unsigned int run) {
 
     //r = send(s[0], b, sizeof(b), MSG_DONTWAIT | MSG_NOSIGNAL);
     r = send(s[0], b, sizeof(b), 0);
+    fprintf(stderr, ">> send s=%d, r=%d, errno=%d, wsa_err=%d\n", s[0], r, errno, WSAGetLastError());
     c_assert(r == sizeof(b));
 
     q_assert(s[0], false, true);
@@ -177,13 +199,12 @@ static void test_uds_edge(unsigned int run) {
     c_assert(c_list_is_linked(&f.ready_link) && (f.events & EPOLLOUT));
 
     /* trigger remote shutdown and verify queue state did not change */
-
-    //r = shutdown(s[1], SHUT_RDWR);
-    r = shutdown(s[1], SD_BOTH);
+        
+    r = shutdown(s[1], SD_SEND);
     c_assert(!r);
 
     q_assert(s[0], false, true);
-    //q_assert(s[1], true, false);
+    q_assert(s[1], true, false);
 
     /*
      * Verify that EPOLLHUP is set. We do *NOT* use the dispatcher for
@@ -203,7 +224,7 @@ static void test_uds_edge(unsigned int run) {
 
     //r = send(s[0], b, sizeof(b), MSG_DONTWAIT | MSG_NOSIGNAL);
     r = send(s[0], b, sizeof(b), 0);
-    fprintf(stderr, "  send r=%d, errno=%d, wsa_err=%d\n", r, errno, WSAGetLastError());
+    fprintf(stderr, ">> send s=%d, r=%d, errno=%d, wsa_err=%d\n", s[0], r, errno, WSAGetLastError());
     //c_assert(r < 0 && errno == EPIPE);
 
     /* fetch EPOLLOUT which was set by shutdown(2) and clear it */
@@ -225,11 +246,12 @@ static void test_uds_edge(unsigned int run) {
         /* if @run is 0, we use recv(2) to dequeue data */
         //r = recv(s[1], b, sizeof(b), MSG_DONTWAIT);
         r = recv(s[1], b, sizeof(b), 0);
-        fprintf(stderr, "  recv r=%d, errno=%d, wsa_err=%d\n", r, errno, WSAGetLastError());
+        fprintf(stderr, "<< recv s=%d, r=%d, errno=%d, wsa_err=%d\n", s[1], r, errno, WSAGetLastError());
         c_assert(r == sizeof(b));
 
         q_assert(s[0], false, false);
-        q_assert(s[1], false, false);
+        //q_assert(s[1], false, false);
+        q_assert(s[1], true, false);
         break;
     case 1:
         /* if @run is 1, we use close(2) to flush queues */

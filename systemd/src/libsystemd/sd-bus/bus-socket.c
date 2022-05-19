@@ -965,7 +965,8 @@ int bus_socket_connect(sd_bus *b) {
                                   b->description ? " " : "", strempty(b->description), strnull(pretty));
                 }
 #ifdef WIN32
-                b->input_fd = socket(b->sockaddr.sa.sa_family, SOCK_STREAM, 0);
+                //b->input_fd = socket(b->sockaddr.sa.sa_family, SOCK_STREAM, 0);
+                b->input_fd = WSASocket(b->sockaddr.sa.sa_family, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
                 fd_nonblock(b->input_fd, true);
                 fd_cloexec(b->input_fd, true);
 #else

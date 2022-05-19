@@ -546,6 +546,7 @@ _dbus_win_warn_win_error(const char* message,
         _tprintf(TEXT("\n\t%s failed with error %lu (%s)"), msg, eNum, sysMsg);
     }
 
+#ifdef GETUID_TEST
     void getgid() {
         LPLOCALGROUP_USERS_INFO_0 pLocalBuf = NULL;
 
@@ -699,7 +700,7 @@ _dbus_win_warn_win_error(const char* message,
             NetApiBufferFree(pLocalBuf);
 
     }
-
+#endif
 
     BOOL GetCurrentUserAndDomain(PTSTR szUser, PDWORD pcchUser,
         PTSTR szDomain, PDWORD pcchDomain) {

@@ -382,3 +382,13 @@ add_executable(uv-bus
 	"test/uv-bus.cpp"
 )
 target_link_libraries(uv-bus uv_a libsystemd-mini)
+
+add_executable(sd-event-udp
+	"test/sd-event-udp.c"
+)
+target_link_libraries(sd-event-udp libsystemd-mini)
+if(WIN32)
+	target_link_libraries(sd-event-udp ws2_32 iphlpapi)
+else()
+	target_link_libraries(sd-event-udp pthread)
+endif()
