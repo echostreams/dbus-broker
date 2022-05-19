@@ -87,7 +87,7 @@ static int test_ping_pong_fn(sd_bus_message* m, void* userdata, sd_bus_error* er
 
     e = sd_bus_message_get_error(m);
     c_assert(!e);
-
+    fprintf(stderr, " ping -> pong\n");
     return sd_event_exit(event, 0);
 }
 
@@ -146,10 +146,12 @@ static void test_ping_pong(void) {
 
     /* loop */
     {
+        fprintf(stderr, "  start event loop...\n");
         r = sd_event_loop(event);
         c_assert(!r);
     }
 
+    fprintf(stderr, "   start terminate broker...\n");
     win_broker_terminate(broker);
 }
 
@@ -165,14 +167,14 @@ int main(int argc, char** argv) {
 
     log_set_max_level(7);
     fprintf(stderr, "start...\n");
-    test_dummy();
-    //fprintf(stderr, "dummy...\n");
-    test_connect();
-    fprintf(stderr, "connect...\n");
-    test_self_ping();
-    fprintf(stderr, "self ping...\n");
-    //test_ping_pong();
-    //fprintf(stderr, "ping pong...\n");
+    //test_dummy();
+    //fprintf(stderr, "dummy done\n");
+    //test_connect();
+    //fprintf(stderr, "connect done\n");
+    //test_self_ping();
+    //fprintf(stderr, "self ping done\n");
+    test_ping_pong();
+    fprintf(stderr, "ping pong done\n");
 
     WSACleanup();
 

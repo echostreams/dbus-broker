@@ -397,6 +397,9 @@ ssize_t recvmsg_safe(int sockfd, struct msghdr* msg, int flags) {
             It is a nonfatal error, and the operation should be retried later.*/
             iResult = -EAGAIN;
         }
+        else if (e == WSAECONNRESET) {
+            iResult = -ECONNRESET;
+        }
         else
         {
             iResult = -e;

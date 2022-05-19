@@ -1612,7 +1612,9 @@ _public_ int sd_event_source_set_io_events(sd_event_source* s, uint32_t events) 
 
     assert_return(s, -EINVAL);
     assert_return(s->type == SOURCE_IO, -EDOM);
+#if defined(__linux__)
     assert_return(!(events & ~(EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLPRI | EPOLLERR | EPOLLHUP | EPOLLET)), -EINVAL);
+#endif
     assert_return(s->event->state != SD_EVENT_FINISHED, -ESTALE);
     assert_return(!event_pid_changed(s->event), -ECHILD);
 
@@ -3005,9 +3007,9 @@ static int event_arm_timer(
     t = sleep_between(e, time_event_source_next(a), time_event_source_latest(b));
     if (d->next == t)
         return 0;
-
+#if defined(__linux__)
     assert_se(d->fd >= 0);
-
+#endif
     if (t == 0) {
         /* We don' want to disarm here, just mean some time looooong ago. */
         its.it_value.tv_sec = 0;

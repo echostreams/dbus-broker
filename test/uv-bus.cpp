@@ -1,3 +1,7 @@
+/*
+ * Integrate sd-bus into libuv event loop
+ */
+
 #include <systemd/sd-bus.h>
 #include <uv.h>
 #include <assert.h>
@@ -71,10 +75,15 @@ int poll_to_libuv_events(int pollflags) {
 
 void update_events(callback_data *data) {
 
+	int events = sd_bus_get_events(data->bus);
+	if (events < 0) {
+		uv_timer_stop(&data->timer);
+		uv_poll_stop(&data->connection);
+		return;
+	}
+
 	// prepare the callback for calling us the next time.
-	int new_events = poll_to_libuv_events(
-		sd_bus_get_events(data->bus)
-	);
+	int new_events = poll_to_libuv_events(events);
 
 	uint64_t usec;
 	int r = sd_bus_get_timeout(data->bus, &usec);
@@ -90,8 +99,8 @@ void update_events(callback_data *data) {
 				handle_dbus((callback_data*)handle->data);
 			},
 			usec / 1000, // time in milliseconds, sd_bus provides µseconds
-				0            // don't repeat
-				);
+			0            // don't repeat
+		);
 	}
 
 	// always watch for disconnects:
@@ -99,8 +108,10 @@ void update_events(callback_data *data) {
 
 	// activate the socket watching and if active, handle dbus
 	uv_poll_start(&data->connection, new_events, [](uv_poll_t* handle, int, int) {
+		fprintf(stderr, "uv_poll_t handle->flags: %d\n", handle->flags);
 		handle_dbus((callback_data*)handle->data);
-		});
+	});
+	
 }
 
 void handle_dbus(callback_data* data) {
@@ -109,7 +120,7 @@ void handle_dbus(callback_data* data) {
 	while (true) {
 		int r = sd_bus_process(data->bus, nullptr);
 		if (r < 0) {
-			fprintf(stderr, "[uv-dbus] Failed to process bus: %s\n", strerror(-r));
+			fprintf(stderr, "[uv-dbus] Failed to process bus: %s\n", strerror(-r));			
 			break;
 		}
 		else if (r > 0) {
@@ -129,7 +140,7 @@ void handle_dbus(callback_data* data) {
 
 int run()
 {
-	fprintf(stderr, "[uv-bus] starting up connections...\n");
+	fprintf(stderr, "[uv-dbus] starting up connections...\n");
 	int r;
 	uv_loop_t loop;	
 	callback_data data;
@@ -151,7 +162,7 @@ int run()
 
 	// register the filedescriptor from
 	// sd_bus_get_fd(bus) to libuv
-	uv_poll_init(&loop, &data.connection, sd_bus_get_fd(data.bus));
+	uv_poll_init_socket(&loop, &data.connection, sd_bus_get_fd(data.bus));
 	data.connection.data = &data;
 
 	// init the dbus-event-timer
@@ -163,9 +174,9 @@ int run()
 	handle_dbus(&data);
 
 	// let the event loop run forever.
-	fprintf(stderr, "[uv-bus] Starting event loop\n");
+	fprintf(stderr, "[uv-dbus] Starting event loop\n");
 	r = uv_run(&loop, UV_RUN_DEFAULT);
-	fprintf(stderr, "[uv-bus] Stopping event loop\n");
+	fprintf(stderr, "[uv-dbus] Stopping event loop\n");
 
 	return r;
 }

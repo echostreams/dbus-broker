@@ -966,6 +966,8 @@ int bus_socket_connect(sd_bus *b) {
                 }
 #ifdef WIN32
                 b->input_fd = socket(b->sockaddr.sa.sa_family, SOCK_STREAM, 0);
+                fd_nonblock(b->input_fd, true);
+                fd_cloexec(b->input_fd, true);
 #else
                 b->input_fd = socket(b->sockaddr.sa.sa_family, SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK, 0);
 #endif

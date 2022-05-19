@@ -141,9 +141,7 @@ static int util_method_reload_config(sd_bus_message* message, void* userdata, sd
 
 const sd_bus_vtable util_vtable[] = {
         SD_BUS_VTABLE_START(0),
-
         SD_BUS_METHOD("ReloadConfig", NULL, NULL, util_method_reload_config, 0),
-
         SD_BUS_VTABLE_END
 };
 
@@ -220,19 +218,22 @@ void win_broker_terminate(Broker* broker) {
     r = CloseHandle(broker->thread);
     c_assert(r == TRUE);
 
-    HANDLE hBroker = OpenProcess(PROCESS_TERMINATE, false, broker->child_pid);
-    c_assert(hBroker != NULL);
-
-    r = TerminateProcess(hBroker, 1);
+    r = TerminateProcess(broker->process, 1);
     c_assert(r == TRUE);
 
-    r = CloseHandle(hBroker);
+    GetExitCodeProcess(broker->process, &value);
+    c_assert(value == 1);    
+
+    r = CloseHandle(broker->process);
     c_assert(r == TRUE);
 
     c_assert(broker->listener_fd < 0);
     c_assert(broker->pipe_fds[0] < 0);
 
-    fprintf(stderr, "*** broker terminated ***\n");
+    Sleep(2000);
+
+    fprintf(stderr, "\n*** broker terminated ***\n\n");
+    
 }
 
 void win_broker_new(Broker** brokerp) {
@@ -261,7 +262,7 @@ Broker* win_broker_free(Broker* broker) {
 }
 
 
-void win_fork_broker(sd_bus** busp, sd_event* event, int listener_fd, pid_t* pidp,
+void win_fork_broker(sd_bus** busp, sd_event* event, int listener_fd, pid_t* pidp, HANDLE *handle,
     struct sockaddr* addr, socklen_t addrlen
     ) {
     _c_cleanup_(sd_bus_flush_close_unrefp) sd_bus* bus = NULL;
@@ -371,6 +372,8 @@ void win_fork_broker(sd_bus** busp, sd_event* event, int listener_fd, pid_t* pid
     /* remember the daemon's pid */
     if (pidp)
         *pidp = pid;
+    if (handle)
+        *handle = pi.hProcess;
 
     //r = sd_event_add_child(event, NULL, pid, WEXITED, util_event_sigchld, NULL);
     //c_assert(r >= 0);
@@ -434,7 +437,9 @@ unsigned int win_broker_thread(void* userdata)
 #endif
 
     //if (broker->listener_fd >= 0) {
-        win_fork_broker(&bus, event, broker->listener_fd, &broker->child_pid, &broker->address, broker->n_address);
+        win_fork_broker(&bus, event, broker->listener_fd, &broker->child_pid, 
+            &broker->process,
+            &broker->address, broker->n_address);
         /* dbus-broker reports its controller in GetConnectionUnixProcessID */
         broker->pid = _getpid();
         //broker->listener_fd = c_close(broker->listener_fd);

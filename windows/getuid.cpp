@@ -8,9 +8,12 @@
 #include <wincrypt.h>
 #include <iphlpapi.h>
 #include <WS2tcpip.h>
+#include <LM.h>
+#include <tchar.h>
 #include <iostream>
 #include <iomanip>
 #include <memory>
+#include <assert.h>
 
 struct heap_delete
 {
@@ -517,6 +520,120 @@ _dbus_win_warn_win_error(const char* message,
         return result;
     }
 
+#define INFO_BUFFER_SIZE 32767
+
+    void printError(const char* msg)
+    {
+        DWORD eNum;
+        TCHAR sysMsg[256];
+        TCHAR* p;
+
+        eNum = GetLastError();
+        FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM |
+            FORMAT_MESSAGE_IGNORE_INSERTS,
+            NULL, eNum,
+            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+            sysMsg, 256, NULL);
+
+        // Trim the end of the line and terminate it with a null
+        p = sysMsg;
+        while ((*p > 31) || (*p == 9))
+            ++p;
+        do { *p-- = 0; } while ((p >= sysMsg) &&
+            ((*p == '.') || (*p < 33)));
+
+        // Display the message
+        _tprintf(TEXT("\n\t%s failed with error %lu (%s)"), msg, eNum, sysMsg);
+    }
+
+    void getgid() {
+        LPLOCALGROUP_USERS_INFO_0 pBuf = NULL;
+        DWORD dwLevel = 0;
+        DWORD dwFlags = LG_INCLUDE_INDIRECT;
+        DWORD dwPrefMaxLen = MAX_PREFERRED_LENGTH;
+        DWORD dwEntriesRead = 0;
+        DWORD dwTotalEntries = 0;
+        NET_API_STATUS nStatus;
+
+        // Get and display the user name.
+        WCHAR  infoBuf[INFO_BUFFER_SIZE];
+        DWORD bufCharCount = INFO_BUFFER_SIZE;
+        if (!GetUserNameW(infoBuf, &bufCharCount))
+            printError("GetUserName");
+        wprintf(L"\nUser name:          %s", infoBuf);
+
+        //
+        // Call the NetUserGetLocalGroups function 
+        // specifying information level 0.
+        //
+        // The LG_INCLUDE_INDIRECT flag specifies that the 
+        // function should also return the names of the local 
+        // groups in which the user is indirectly a member.
+        //
+        nStatus = NetUserGetLocalGroups(NULL,
+            infoBuf,
+            dwLevel,
+            dwFlags,
+            (LPBYTE*)&pBuf,
+            dwPrefMaxLen,
+            &dwEntriesRead,
+            &dwTotalEntries);
+
+        //
+        // If the call succeeds,
+        //
+        if (nStatus == NERR_Success)
+        {
+            LPLOCALGROUP_USERS_INFO_0 pTmpBuf;
+            DWORD i;
+            DWORD dwTotalCount = 0;
+
+            if ((pTmpBuf = pBuf) != NULL)
+            {
+                fprintf(stderr, "\nLocal group(s):\n");
+                //
+                // Loop through the entries and 
+                // print the names of the local groups 
+                // to which the user belongs. 
+                //
+                for (i = 0; i < dwEntriesRead; i++)
+                {
+                    assert(pTmpBuf != NULL);
+
+                    if (pTmpBuf == NULL)
+                    {
+                        fprintf(stderr, "An access violation has occurred\n");
+                        break;
+                    }
+
+                    wprintf(L"\t-- %s\n", pTmpBuf->lgrui0_name);
+
+                    pTmpBuf++;
+                    dwTotalCount++;
+                }
+            }
+            //
+            // If all available entries were
+            //  not enumerated, print the number actually 
+            //  enumerated and the total number available.
+            //
+            if (dwEntriesRead < dwTotalEntries)
+                fprintf(stderr, "\nTotal entries: %lu", dwTotalEntries);
+            //
+            // Otherwise, just print the total.
+            //
+            printf("\nEntries enumerated: %lu\n", dwTotalCount);
+        }
+        else
+            fprintf(stderr, "A system error has occurred: %lu\n", nStatus);
+        //
+        // Free the allocated memory.
+        //
+        if (pBuf != NULL)
+            NetApiBufferFree(pBuf);
+
+    }
+
 #ifdef __cplusplus
 }
 #endif
@@ -528,9 +645,20 @@ int main()
     uid_t uid = getuid();
     uid_t euid = geteuid();
     std::cout
-        << "uid: " << std::setbase(10) << uid << std::endl
-        << "euid: " << std::setbase(10) << euid << std::endl
-        << std::endl;
+        << "uid:  " << std::setbase(10) << uid << std::endl
+        << "euid: " << std::setbase(10) << euid << std::endl;
+    char* sid = NULL;
+    _dbus_getsid(&sid, 0);
+    
+    if (sid != NULL)
+    {
+        std::cout
+            << "sid:  " << sid << std::endl;
+        LocalFree(sid);
+    }
+
+    getgid();
+
     return EXIT_SUCCESS;
 }
 #endif

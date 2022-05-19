@@ -23,6 +23,7 @@ struct Broker {
     HANDLE thread;
     struct sockaddr address;
     HANDLE event;
+    HANDLE process;
 #else
         pthread_t thread;
         struct sockaddr_un address;
@@ -81,7 +82,7 @@ C_DEFINE_CLEANUP(Broker *, util_broker_free);
 
 #ifdef WIN32
 void win_broker_new(Broker** brokerp);
-void win_fork_broker(sd_bus** busp, sd_event* event, int listener_fd, pid_t* pidp, struct sockaddr* addr, socklen_t addrlen);
+void win_fork_broker(sd_bus** busp, sd_event* event, int listener_fd, pid_t* pidp, HANDLE* process, struct sockaddr* addr, socklen_t addrlen);
 void win_broker_spawn(Broker* broker);
 void win_broker_terminate(Broker* broker);
 Broker* win_broker_free(Broker* broker);

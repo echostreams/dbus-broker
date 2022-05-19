@@ -43,7 +43,11 @@ static void after_shutdown(uv_shutdown_t* req, int status) {
     /*assert(status == 0);*/
     if (status < 0)
         fprintf(stderr, "err: %s\n", uv_strerror(status));
+#ifdef WIN32
+    fprintf(stderr, "data received: %llu\n", data_cntr / 1024 / 1024);
+#else
     fprintf(stderr, "data received: %lu\n", data_cntr / 1024 / 1024);
+#endif
     data_cntr = 0;
     uv_close((uv_handle_t*)req->handle, on_close);
     free(req);
