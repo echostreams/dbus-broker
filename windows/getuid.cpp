@@ -547,7 +547,8 @@ _dbus_win_warn_win_error(const char* message,
     }
 
     void getgid() {
-        LPLOCALGROUP_USERS_INFO_0 pBuf = NULL;
+        LPLOCALGROUP_USERS_INFO_0 pLocalBuf = NULL;
+
         DWORD dwLevel = 0;
         DWORD dwFlags = LG_INCLUDE_INDIRECT;
         DWORD dwPrefMaxLen = MAX_PREFERRED_LENGTH;
@@ -574,7 +575,7 @@ _dbus_win_warn_win_error(const char* message,
             infoBuf,
             dwLevel,
             dwFlags,
-            (LPBYTE*)&pBuf,
+            (LPBYTE*)&pLocalBuf,
             dwPrefMaxLen,
             &dwEntriesRead,
             &dwTotalEntries);
@@ -588,7 +589,7 @@ _dbus_win_warn_win_error(const char* message,
             DWORD i;
             DWORD dwTotalCount = 0;
 
-            if ((pTmpBuf = pBuf) != NULL)
+            if ((pTmpBuf = pLocalBuf) != NULL)
             {
                 fprintf(stderr, "\nLocal group(s):\n");
                 //
@@ -624,15 +625,275 @@ _dbus_win_warn_win_error(const char* message,
             //
             printf("\nEntries enumerated: %lu\n", dwTotalCount);
         }
-        else
+        else {
             fprintf(stderr, "A system error has occurred: %lu\n", nStatus);
+
+            LPGROUP_USERS_INFO_0 pGlobalBuf = NULL;
+
+            nStatus = NetUserGetGroups(NULL, infoBuf,
+                dwLevel,
+                (LPBYTE*)&pGlobalBuf,
+                dwPrefMaxLen,
+                &dwEntriesRead,
+                &dwTotalEntries
+            );
+
+            //
+            // If the call succeeds,
+            //
+            if (nStatus == NERR_Success)
+            {
+                LPGROUP_USERS_INFO_0 pTmpBuf;
+                DWORD i;
+                DWORD dwTotalCount = 0;
+
+                if ((pTmpBuf = pGlobalBuf) != NULL)
+                {
+                    fprintf(stderr, "\nGlobal group(s):\n");
+                    //
+                    // Loop through the entries; 
+                    //  print the name of the global groups 
+                    //  to which the user belongs.
+                    //
+                    for (i = 0; i < dwEntriesRead; i++)
+                    {
+                        assert(pTmpBuf != NULL);
+
+                        if (pTmpBuf == NULL)
+                        {
+                            fprintf(stderr, "An access violation has occurred\n");
+                            break;
+                        }
+
+                        wprintf(L"\t-- %s\n", pTmpBuf->grui0_name);
+
+                        pTmpBuf++;
+                        dwTotalCount++;
+                    }
+                }
+                //
+                // If all available entries were
+                //  not enumerated, print the number actually 
+                //  enumerated and the total number available.
+                //
+                if (dwEntriesRead < dwTotalEntries)
+                    fprintf(stderr, "\nTotal entries: %lu", dwTotalEntries);
+                //
+                // Otherwise, just print the total.
+                //
+                printf("\nEntries enumerated: %lu\n", dwTotalCount);
+            }
+            else
+                fprintf(stderr, "A system error has occurred: %lu\n", nStatus);
+            //
+            // Free the allocated buffer.
+            //
+            if (pGlobalBuf != NULL)
+                NetApiBufferFree(pGlobalBuf);
+
+        }
         //
         // Free the allocated memory.
         //
-        if (pBuf != NULL)
-            NetApiBufferFree(pBuf);
+        if (pLocalBuf != NULL)
+            NetApiBufferFree(pLocalBuf);
 
     }
+
+
+    BOOL GetCurrentUserAndDomain(PTSTR szUser, PDWORD pcchUser,
+        PTSTR szDomain, PDWORD pcchDomain) {
+
+        BOOL         fSuccess = FALSE;
+        HANDLE       hToken = NULL;
+        PTOKEN_USER  ptiUser = NULL;
+        DWORD        cbti = 0;
+        SID_NAME_USE snu;
+
+        __try {
+
+            // Get the calling thread's access token.
+            if (!OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE,
+                &hToken)) {
+
+                if (GetLastError() != ERROR_NO_TOKEN)
+                    __leave;
+
+                // Retry against process token if no thread token exists.
+                if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY,
+                    &hToken))
+                    __leave;
+            }
+
+            // Obtain the size of the user information in the token.
+            if (GetTokenInformation(hToken, TokenUser, NULL, 0, &cbti)) {
+
+                // Call should have failed due to zero-length buffer.
+                __leave;
+
+            }
+            else {
+
+                // Call should have failed due to zero-length buffer.
+                if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+                    __leave;
+            }
+
+            // Allocate buffer for user information in the token.
+            ptiUser = (PTOKEN_USER)HeapAlloc(GetProcessHeap(), 0, cbti);
+            if (!ptiUser)
+                __leave;
+
+            // Retrieve the user information from the token.
+            if (!GetTokenInformation(hToken, TokenUser, ptiUser, cbti, &cbti))
+                __leave;
+
+            // Retrieve user name and domain name based on user's SID.
+            if (!LookupAccountSid(NULL, ptiUser->User.Sid, szUser, pcchUser,
+                szDomain, pcchDomain, &snu))
+                __leave;
+
+            fSuccess = TRUE;
+
+        }
+        __finally {
+
+            // Free resources.
+            if (hToken)
+                CloseHandle(hToken);
+
+            if (ptiUser)
+                HeapFree(GetProcessHeap(), 0, ptiUser);
+        }
+
+        return fSuccess;
+    }
+
+#define MAX_NAME 256
+
+    static bool ShouldHideGroup(PSID Sid, DWORD Attributes, bool HideDeny = false)
+    {
+        if (SE_GROUP_INTEGRITY & Attributes) return true;
+        if (SE_GROUP_LOGON_ID & Attributes) return true;
+        if (HideDeny && (SE_GROUP_USE_FOR_DENY_ONLY & Attributes)) return true;
+        for (UINT i = 0; i <= 0xff; ++i) // Hack to check if it is well known
+        {
+            if (IsWellKnownSid(Sid, (WELL_KNOWN_SID_TYPE)i))
+            {
+                static const SID_IDENTIFIER_AUTHORITY ntauth = SECURITY_NT_AUTHORITY;
+                PSID_IDENTIFIER_AUTHORITY pSIA = GetSidIdentifierAuthority(Sid);
+                DWORD* pSub1 = GetSidSubAuthority(Sid, 0);
+                if (memcmp(pSIA, &ntauth, 6) || *pSub1 != SECURITY_BUILTIN_DOMAIN_RID) // Hide everything except the BUILTIN\* groups
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    BOOL SearchTokenGroupsForSID(VOID)
+    {
+        DWORD i, dwSize = 0, dwResult = 0;
+        HANDLE hToken;
+        PTOKEN_GROUPS pGroupInfo;
+        SID_NAME_USE SidType;
+        char lpName[MAX_NAME];
+        char lpDomain[MAX_NAME];
+        PSID pSID = NULL;
+        SID_IDENTIFIER_AUTHORITY SIDAuth = SECURITY_NT_AUTHORITY;
+
+        // Open a handle to the access token for the calling process.
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken))
+        {
+            printf("OpenProcessToken Error %lu\n", GetLastError());
+            return FALSE;
+        }
+
+        // Call GetTokenInformation to get the buffer size.
+        if (!GetTokenInformation(hToken, TokenGroups, NULL, dwSize, &dwSize))
+        {
+            dwResult = GetLastError();
+            if (dwResult != ERROR_INSUFFICIENT_BUFFER) {
+                printf("GetTokenInformation Error %lu\n", dwResult);
+                return FALSE;
+            }
+        }
+
+        // Allocate the buffer.
+
+        pGroupInfo = (PTOKEN_GROUPS)GlobalAlloc(GPTR, dwSize);
+
+        // Call GetTokenInformation again to get the group information.
+
+        if (!GetTokenInformation(hToken, TokenGroups, pGroupInfo,
+            dwSize, &dwSize))
+        {
+            printf("GetTokenInformation Error %lu\n", GetLastError());
+            return FALSE;
+        }
+
+        // Create a SID for the BUILTIN\Administrators group.
+
+        if (!AllocateAndInitializeSid(&SIDAuth, 2,
+            SECURITY_BUILTIN_DOMAIN_RID,
+            DOMAIN_ALIAS_RID_ADMINS,
+            0, 0, 0, 0, 0, 0,
+            &pSID))
+        {
+            printf("AllocateAndInitializeSid Error %lu\n", GetLastError());
+            return FALSE;
+        }
+
+        // Loop through the group SIDs looking for the administrator SID.
+
+        for (i = 0; i < pGroupInfo->GroupCount; i++)
+        {
+            if (ShouldHideGroup(pGroupInfo->Groups[i].Sid, pGroupInfo->Groups[i].Attributes)) continue;
+
+            // Lookup the account name and print it.
+
+            dwSize = MAX_NAME;
+            if (!LookupAccountSid(NULL, pGroupInfo->Groups[i].Sid,
+                lpName, &dwSize, lpDomain,
+                &dwSize, &SidType))
+            {
+                dwResult = GetLastError();
+                if (dwResult == ERROR_NONE_MAPPED)
+                    strcpy_s(lpName, dwSize, "NONE_MAPPED");
+                else
+                {
+                    printf("LookupAccountSid Error %lu\n", GetLastError());
+                    return FALSE;
+                }
+            }
+            printf("%*lu: %s\\%s\n", 2, i, lpDomain, lpName);
+
+            // Find out whether the SID is enabled in the token.
+            if (pGroupInfo->Groups[i].Attributes & SE_GROUP_ENABLED)
+                printf("    The group SID is enabled.\n");
+            else if (pGroupInfo->Groups[i].Attributes &
+                SE_GROUP_USE_FOR_DENY_ONLY)
+                printf("    The group SID is a deny-only SID.\n");
+            else
+                printf("    The group SID is not enabled.\n");
+
+            if (EqualSid(pSID, pGroupInfo->Groups[i].Sid))
+            {
+                
+                printf("    Current user is a member of the %s\\%s group\n",
+                    lpDomain, lpName);
+                
+            }
+        }
+
+        if (pSID)
+            FreeSid(pSID);
+        if (pGroupInfo)
+            GlobalFree(pGroupInfo);
+        return TRUE;
+    }
+
 
 #ifdef __cplusplus
 }
@@ -658,6 +919,15 @@ int main()
     }
 
     getgid();
+
+    TCHAR user[1024], domain[1024];
+    DWORD chUser = sizeof(user), chDomain = sizeof(domain);
+    if (GetCurrentUserAndDomain(user, &chUser, domain, &chDomain))
+    {
+        _tprintf(TEXT("user:%s\ndomain:%s\n"), user, domain);
+    }
+
+    SearchTokenGroupsForSID();
 
     return EXIT_SUCCESS;
 }
