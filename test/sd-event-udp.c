@@ -8,6 +8,7 @@
 
 #if defined(__linux__)
 #include <alloca.h>
+#include <arpa/inet.h>
 #else
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include <wepoll/wepoll.h>
@@ -189,19 +190,26 @@ int client()
     int SendingSocket;
 #endif
 
-    
-    SOCKADDR_IN ReceiverAddr, SrcInfo;
+    union {
+        struct sockaddr_in in;
+        struct sockaddr sa;
+    } ReceiverAddr, SrcInfo;
+
     char SendBuf[256] = {0};
     int len;
     int TotalByteSent = 0;
 
     // Create a new socket to receive datagrams on.
     SendingSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (SendingSocket == INVALID_SOCKET) {
+    if (SendingSocket < 0) {
         // Print error message
+#ifdef WIN32
         printf("Client: Error at socket(): %d\n", WSAGetLastError());
         // Clean up
         WSACleanup();
+#else
+        printf("Client: Error at socket(): %d\n", errno);
+#endif
         // Exit with error
         return -1;
     }
@@ -215,10 +223,10 @@ int client()
     For demonstration purposes, let's assume our receiver's IP address is 127.0.0.1
     and waiting for datagrams on port 7777 */
 
-    ReceiverAddr.sin_family = AF_INET;
-    ReceiverAddr.sin_port = htons(DEF_PORT);
+    ReceiverAddr.in.sin_family = AF_INET;
+    ReceiverAddr.in.sin_port = htons(DEF_PORT);
     //ReceiverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    inet_pton(AF_INET, "127.0.0.1", &ReceiverAddr.sin_addr.s_addr);
+    inet_pton(AF_INET, "127.0.0.1", &ReceiverAddr.in.sin_addr.s_addr);
 
 
     // Send data packages to the receiver(Server).
@@ -231,10 +239,10 @@ int client()
         printf("Client: Sending data...\n");
 
         //Send message to receiver(Server)
-        int ByteSent = sendto(SendingSocket, SendBuf, (int)strlen(SendBuf), 0, (SOCKADDR*)&ReceiverAddr, sizeof(ReceiverAddr));
+        int ByteSent = sendto(SendingSocket, SendBuf, (int)strlen(SendBuf), 0, &ReceiverAddr.sa, sizeof(ReceiverAddr.sa));
         //Print success message
         printf("Client: Sent %d bytes\n", ByteSent);
-        if (ByteSent == SOCKET_ERROR)
+        if (ByteSent < 0)
             break;
 
         TotalByteSent += ByteSent;
@@ -250,32 +258,28 @@ int client()
     // Print some info on the receiver(Server) side...
 
     // Allocate the required resources
-
     memset(&SrcInfo, 0, sizeof(SrcInfo));
 
-    len = sizeof(SrcInfo);
+    len = sizeof(SrcInfo.sa);
 
-    getsockname(SendingSocket, (SOCKADDR*)&SrcInfo, &len);
+    getsockname(SendingSocket, &SrcInfo.sa, &len);
 
-    printf("Client: Sending IP(s) used: %s\n", inet_ntoa(SrcInfo.sin_addr));
-
-    printf("Client: Sending port used: %d\n", htons(SrcInfo.sin_port));
+    printf("Client: Sending IP(s) used: %s\n", inet_ntoa(SrcInfo.in.sin_addr));
+    printf("Client: Sending port used: %d\n", htons(SrcInfo.in.sin_port));
 
     // Print some info on the sender(Client) side...
-    getpeername(SendingSocket, (SOCKADDR*)&ReceiverAddr, (int*)sizeof(ReceiverAddr));
+    getpeername(SendingSocket, &ReceiverAddr.sa, &len);
 
-    printf("Client: Receiving IP used: %s\n", inet_ntoa(ReceiverAddr.sin_addr));
-
-    printf("Client: Receiving port used: %d\n", htons(ReceiverAddr.sin_port));
+    printf("Client: Receiving IP used: %s\n", inet_ntoa(ReceiverAddr.in.sin_addr));
+    printf("Client: Receiving port used: %d\n", htons(ReceiverAddr.in.sin_port));
 
     printf("Client: Total byte sent: %d\n", TotalByteSent);
 
 
-
     // When your application is finished receiving datagrams close the socket.
-
     printf("Client: Finished sending. Closing the sending socket...\n");
 
+#ifdef WIN32
     if (closesocket(SendingSocket) != 0) {
 
         printf("Client: closesocket() failed! Error code: %d\n", WSAGetLastError());
@@ -283,10 +287,14 @@ int client()
     else {
         printf("Server: closesocket() is OK\n");
     }
-
-
-#ifdef WIN32
     WSACleanup();
+#else
+    if (close(SendingSocket) < 0) {
+        printf("Client: close() failed! Error code: %d\n", errno);
+    }
+    else {
+        printf("Server: close() is OK\n");
+    }
 #endif
 
     return 0;
