@@ -173,7 +173,7 @@ static bool value_node_test(
         case BUS_MATCH_INTERFACE:
         case BUS_MATCH_MEMBER:
         case BUS_MATCH_PATH:
-#if defined (__linux__)
+#if defined (__linux__) || defined (__clang__)
         case BUS_MATCH_ARG ... BUS_MATCH_ARG_LAST:
 #else
         case BUS_MATCH_ARG:
@@ -197,6 +197,7 @@ static bool value_node_test(
         case BUS_MATCH_ARG + 18:
         case BUS_MATCH_ARG + 19:
         case BUS_MATCH_ARG + 20:
+            // ...
         case BUS_MATCH_ARG_LAST:
 #endif
                 if (value_str)
@@ -204,10 +205,11 @@ static bool value_node_test(
 
                 return false;
 
-#if defined (__linux__)
+#if defined (__linux__) || defined (__clang__)
         case BUS_MATCH_ARG_HAS ... BUS_MATCH_ARG_HAS_LAST: 
 #else
         case BUS_MATCH_ARG_HAS:
+            // ...
         case BUS_MATCH_ARG_HAS_LAST:
 #endif
         {
@@ -219,11 +221,11 @@ static bool value_node_test(
 
                 return false;
         }
-#if defined (__linux__)
+#if defined (__linux__) || defined (__clang__)
         case BUS_MATCH_ARG_NAMESPACE ... BUS_MATCH_ARG_NAMESPACE_LAST:
 #else
         case BUS_MATCH_ARG_NAMESPACE:
-
+            // ...
         case BUS_MATCH_ARG_NAMESPACE_LAST:
 #endif
                 if (value_str)
@@ -232,11 +234,11 @@ static bool value_node_test(
                 return false;
 
         
-#if defined (__linux__)
+#if defined(__GNUC__) || defined(__clang__)
         case BUS_MATCH_ARG_PATH ... BUS_MATCH_ARG_PATH_LAST:
 #else
         case BUS_MATCH_ARG_PATH:
-
+            // ...
         case BUS_MATCH_ARG_PATH_LAST:
 #endif
                 if (value_str)
@@ -272,13 +274,13 @@ static bool value_node_same(
         case BUS_MATCH_INTERFACE:
         case BUS_MATCH_MEMBER:
         case BUS_MATCH_PATH:
-#if defined (__linux__)
+#if defined (__linux__) || defined(__clang__)
         case BUS_MATCH_ARG ... BUS_MATCH_ARG_LAST:
         case BUS_MATCH_ARG_HAS ... BUS_MATCH_ARG_HAS_LAST:
         case BUS_MATCH_ARG_NAMESPACE ... BUS_MATCH_ARG_NAMESPACE_LAST:
 #endif
         case BUS_MATCH_PATH_NAMESPACE:
-#if defined (__linux__)
+#if defined (__linux__) || defined(__clang__)
         case BUS_MATCH_ARG_PATH ... BUS_MATCH_ARG_PATH_LAST:
 #endif
                 return streq(node->value.str, value_str);
@@ -407,7 +409,7 @@ int bus_match_run(
         case BUS_MATCH_PATH_NAMESPACE:
                 test_str = m->path;
                 break;
-#if defined (__linux__)
+#if defined (__linux__) || defined(__clang__)
         case BUS_MATCH_ARG ... BUS_MATCH_ARG_LAST:
                 (void) bus_message_get_arg(m, node->type - BUS_MATCH_ARG, &test_str);
                 break;

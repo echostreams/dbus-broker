@@ -95,6 +95,7 @@ include_directories(
 	"systemd/src/systemd"
 	"systemd/src/libsystemd/sd-bus"
 	"systemd/src/libsystemd/sd-id128"
+	"systemd/src/libsystemd/sd-event"
 	"systemd/src/basic"
 	"systemd/src/fundamental"
 	"systemd/src/shared"

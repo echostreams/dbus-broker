@@ -12,7 +12,7 @@
 
 #include "alloc-util.h"
 #include "env-util.h"
-#include "../systemd/src/libsystemd/sd-event/event-source.h"
+#include "event-source.h"
 #include "fd-util.h"
 #include "fs-util.h"
 #include "hashmap.h"

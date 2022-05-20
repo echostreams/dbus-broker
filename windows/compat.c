@@ -555,7 +555,7 @@ int dumb_socketpair(OPENCONNECT_CMD_SOCKET socks[2], int make_overlapped)
 		if (listen(listener, 1) == SOCKET_ERROR)
 			goto fallback;
 
-		socks[0] = WSASocket(domain, SOCK_STREAM, 0, NULL, 0, flags);
+		socks[0] = WSASocketW(domain, SOCK_STREAM, 0, NULL, 0, flags);
 		if (socks[0] == INVALID_SOCKET)
 			goto fallback;
 		if (connect(socks[0], &a.addr, addrlen) == SOCKET_ERROR)

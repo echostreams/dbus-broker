@@ -29,6 +29,10 @@
 #include "user-util.h"
 #include "utf8.h"
 
+#ifdef WIN32
+uint32_t _dbus_getsid(char** sid, unsigned long process_id);
+#endif
+
 #define SNDBUF_SIZE (8*1024*1024)
 
 static void iovec_advance(struct iovec iov[], unsigned *idx, size_t size) {
@@ -348,7 +352,7 @@ static int verify_external_token(sd_bus *b, const char *p, size_t l) {
 
         r = parse_uid(token, &u);
 
-        printf(">> parse_uid('%s', %d)=%d\n", token, u, r);
+        //printf(">> parse_uid('%s', %d)=%d\n", token, u, r);
 
         if (r < 0)
                 return 0;
@@ -966,7 +970,7 @@ int bus_socket_connect(sd_bus *b) {
                 }
 #ifdef WIN32
                 //b->input_fd = socket(b->sockaddr.sa.sa_family, SOCK_STREAM, 0);
-                b->input_fd = WSASocket(b->sockaddr.sa.sa_family, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
+                b->input_fd = WSASocketW(b->sockaddr.sa.sa_family, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
                 fd_nonblock(b->input_fd, true);
                 fd_cloexec(b->input_fd, true);
 #else

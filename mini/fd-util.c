@@ -96,7 +96,7 @@ int fd_nonblock(int fd, bool nonblock) {
 int fd_cloexec(int fd, bool cloexec) {
 #ifdef WIN32
 	if (
-		!SetHandleInformation((HANDLE)fd,
+		!SetHandleInformation((HANDLE)(uintptr_t)fd,
 			HANDLE_FLAG_INHERIT | HANDLE_FLAG_PROTECT_FROM_CLOSE,
 			cloexec ? 0 /*disable both flags*/
 			: HANDLE_FLAG_INHERIT | HANDLE_FLAG_PROTECT_FROM_CLOSE)
@@ -164,7 +164,7 @@ int fd_get_path(int fd, char** ret) {
 		objectNameInfo = malloc(0x1000);
 
 		// Get required length
-		fp_NtQueryObject(fd, ObjectNameInformation, objectNameInfo, 0x1000, &u32_ReqLength);
+		fp_NtQueryObject((HANDLE)(uintptr_t)fd, ObjectNameInformation, objectNameInfo, 0x1000, &u32_ReqLength);
 
 		// Reallocate the buffer and try again.
 		objectNameInfo = realloc(objectNameInfo, u32_ReqLength);
@@ -172,7 +172,7 @@ int fd_get_path(int fd, char** ret) {
 		// IMPORTANT: The return value from NtQueryObject is bullshit! (driver bug?)
 		// - The function may return STATUS_NOT_SUPPORTED although it has successfully written to the buffer.
 		// - The function returns STATUS_SUCCESS although h_File == 0xFFFFFFFF
-		fp_NtQueryObject(fd, ObjectNameInformation, objectNameInfo, u32_ReqLength, NULL);
+		fp_NtQueryObject((HANDLE)(uintptr_t)fd, ObjectNameInformation, objectNameInfo, u32_ReqLength, NULL);
 
 		// Cast our buffer into an UNICODE_STRING.
 		objectName = *(PUNICODE_STRING)objectNameInfo;

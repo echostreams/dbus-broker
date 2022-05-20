@@ -109,7 +109,7 @@ static void test_uds_edge(unsigned int run) {
 
     //r = socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0, s);
     r = uv_socketpair(SOCK_STREAM, 0, s, UV_NONBLOCK_PIPE, UV_NONBLOCK_PIPE);
-    fprintf(stderr, "socketpair: %d : %d\n", s[0], s[1]);
+    fprintf(stderr, "socketpair: %llu : %llu\n", s[0], s[1]);
     c_assert(!r);
 
     r = dispatch_file_init(&f, &c, NULL, s[0], EPOLLOUT, 0);
@@ -130,7 +130,7 @@ static void test_uds_edge(unsigned int run) {
 
     //r = send(s[0], b, sizeof(b), MSG_DONTWAIT | MSG_NOSIGNAL);
     r = send(s[0], b, sizeof(b), 0);
-    fprintf(stderr, ">> send s=%d, r=%d, errno=%d, wsa_err=%d\n", s[0], r, errno, WSAGetLastError());
+    fprintf(stderr, ">> send s=%llu, r=%d, errno=%d, wsa_err=%d\n", s[0], r, errno, WSAGetLastError());
     c_assert(r == sizeof(b));
 
     q_assert(s[0], false, true);
@@ -153,7 +153,7 @@ static void test_uds_edge(unsigned int run) {
     /* receive data and verify socket becomes pollable */
 
     r = recv(s[1], b, sizeof(b), 0/*MSG_DONTWAIT*/);
-    fprintf(stderr, "<< recv s=%d, r=%d, errno=%d, wsa_err=%d\n", s[1], r, errno, WSAGetLastError());
+    fprintf(stderr, "<< recv s=%llu, r=%d, errno=%d, wsa_err=%d\n", s[1], r, errno, WSAGetLastError());
     c_assert(r == sizeof(b));
 
     q_assert(s[0], false, false);
@@ -179,7 +179,7 @@ static void test_uds_edge(unsigned int run) {
 
     //r = send(s[0], b, sizeof(b), MSG_DONTWAIT | MSG_NOSIGNAL);
     r = send(s[0], b, sizeof(b), 0);
-    fprintf(stderr, ">> send s=%d, r=%d, errno=%d, wsa_err=%d\n", s[0], r, errno, WSAGetLastError());
+    fprintf(stderr, ">> send s=%llu, r=%d, errno=%d, wsa_err=%d\n", s[0], r, errno, WSAGetLastError());
     c_assert(r == sizeof(b));
 
     q_assert(s[0], false, true);
@@ -224,7 +224,7 @@ static void test_uds_edge(unsigned int run) {
 
     //r = send(s[0], b, sizeof(b), MSG_DONTWAIT | MSG_NOSIGNAL);
     r = send(s[0], b, sizeof(b), 0);
-    fprintf(stderr, ">> send s=%d, r=%d, errno=%d, wsa_err=%d\n", s[0], r, errno, WSAGetLastError());
+    fprintf(stderr, ">> send s=%llu, r=%d, errno=%d, wsa_err=%d\n", s[0], r, errno, WSAGetLastError());
     //c_assert(r < 0 && errno == EPIPE);
 
     /* fetch EPOLLOUT which was set by shutdown(2) and clear it */
@@ -246,7 +246,7 @@ static void test_uds_edge(unsigned int run) {
         /* if @run is 0, we use recv(2) to dequeue data */
         //r = recv(s[1], b, sizeof(b), MSG_DONTWAIT);
         r = recv(s[1], b, sizeof(b), 0);
-        fprintf(stderr, "<< recv s=%d, r=%d, errno=%d, wsa_err=%d\n", s[1], r, errno, WSAGetLastError());
+        fprintf(stderr, "<< recv s=%llu, r=%d, errno=%d, wsa_err=%d\n", s[1], r, errno, WSAGetLastError());
         c_assert(r == sizeof(b));
 
         q_assert(s[0], false, false);

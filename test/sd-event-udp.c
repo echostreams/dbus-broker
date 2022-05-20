@@ -9,6 +9,7 @@
 #if defined(__linux__)
 #include <alloca.h>
 #else
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include <wepoll/wepoll.h>
 #endif
 #include <endian.h>
@@ -25,6 +26,8 @@
 
 #include <systemd/sd-daemon.h>
 #include <systemd/sd-event.h>
+
+#define DEF_PORT 7777
 
 static int io_handler(sd_event_source* es, int fd, uint32_t revents, void* userdata) {
     void* buffer;
@@ -63,7 +66,8 @@ static int io_handler(sd_event_source* es, int fd, uint32_t revents, void* userd
     return 0;
 }
 
-int main(int argc, char* argv[]) {
+int server()
+{
     union {
         struct sockaddr_in in;
         struct sockaddr sa;
@@ -132,7 +136,7 @@ int main(int argc, char* argv[]) {
 
     sa.in = (struct sockaddr_in){
             .sin_family = AF_INET,
-            .sin_port = htobe16(7777),
+            .sin_port = htobe16(DEF_PORT),
     };
     if (bind(fd, &sa.sa, sizeof(sa)) < 0) {
         r = -errno;
@@ -164,4 +168,134 @@ finish:
         fprintf(stderr, "Failure: %s\n", strerror(-r));
 
     return r < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+}
+
+int client()
+{
+#ifdef WIN32
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        printf("Client: WSAStartup failed with error %d\n", WSAGetLastError());
+        // Clean up
+        WSACleanup();
+        // Exit with error
+        return -1;
+    }
+    else {
+        printf("Client: WSAStartup(%x): %s, Status: %s.\n", wsaData.wVersion, wsaData.szDescription, wsaData.szSystemStatus);
+    }
+    SOCKET SendingSocket;
+#else
+    int SendingSocket;
+#endif
+
+    
+    SOCKADDR_IN ReceiverAddr, SrcInfo;
+    char SendBuf[256] = {0};
+    int len;
+    int TotalByteSent = 0;
+
+    // Create a new socket to receive datagrams on.
+    SendingSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (SendingSocket == INVALID_SOCKET) {
+        // Print error message
+        printf("Client: Error at socket(): %d\n", WSAGetLastError());
+        // Clean up
+        WSACleanup();
+        // Exit with error
+        return -1;
+    }
+    else {
+        printf("Client: socket() is OK!\n");
+    }
+
+
+    /*Set up a SOCKADDR_IN structure that will identify who we
+    will send datagrams to.
+    For demonstration purposes, let's assume our receiver's IP address is 127.0.0.1
+    and waiting for datagrams on port 7777 */
+
+    ReceiverAddr.sin_family = AF_INET;
+    ReceiverAddr.sin_port = htons(DEF_PORT);
+    //ReceiverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    inet_pton(AF_INET, "127.0.0.1", &ReceiverAddr.sin_addr.s_addr);
+
+
+    // Send data packages to the receiver(Server).
+    do {
+        printf("\nPlease, type your message: "); //Ask user for message
+        char* c = fgets(SendBuf, sizeof(SendBuf), stdin); //Read user's input
+
+        //Print user's input and a progress message
+        printf("Client: Data to be sent: %s\n", c);
+        printf("Client: Sending data...\n");
+
+        //Send message to receiver(Server)
+        int ByteSent = sendto(SendingSocket, SendBuf, (int)strlen(SendBuf), 0, (SOCKADDR*)&ReceiverAddr, sizeof(ReceiverAddr));
+        //Print success message
+        printf("Client: Sent %d bytes\n", ByteSent);
+        if (ByteSent == SOCKET_ERROR)
+            break;
+
+        TotalByteSent += ByteSent;
+
+        if (memcmp(SendBuf, "EXIT", 4) == 0)
+            break;
+        /*Program is asking user for messages and sending the to Server,until you will close it.
+        (You can replace while(1) with a condition to stop asking/sending messages.)*/
+    } while (1);
+
+
+
+    // Print some info on the receiver(Server) side...
+
+    // Allocate the required resources
+
+    memset(&SrcInfo, 0, sizeof(SrcInfo));
+
+    len = sizeof(SrcInfo);
+
+    getsockname(SendingSocket, (SOCKADDR*)&SrcInfo, &len);
+
+    printf("Client: Sending IP(s) used: %s\n", inet_ntoa(SrcInfo.sin_addr));
+
+    printf("Client: Sending port used: %d\n", htons(SrcInfo.sin_port));
+
+    // Print some info on the sender(Client) side...
+    getpeername(SendingSocket, (SOCKADDR*)&ReceiverAddr, (int*)sizeof(ReceiverAddr));
+
+    printf("Client: Receiving IP used: %s\n", inet_ntoa(ReceiverAddr.sin_addr));
+
+    printf("Client: Receiving port used: %d\n", htons(ReceiverAddr.sin_port));
+
+    printf("Client: Total byte sent: %d\n", TotalByteSent);
+
+
+
+    // When your application is finished receiving datagrams close the socket.
+
+    printf("Client: Finished sending. Closing the sending socket...\n");
+
+    if (closesocket(SendingSocket) != 0) {
+
+        printf("Client: closesocket() failed! Error code: %d\n", WSAGetLastError());
+    }
+    else {
+        printf("Server: closesocket() is OK\n");
+    }
+
+
+#ifdef WIN32
+    WSACleanup();
+#endif
+
+    return 0;
+}
+
+int main(int argc, char* argv[])
+{
+    if (argc > 1 && strcmp(argv[1], "client") == 0)
+        return client();
+    else
+        return server();
 }

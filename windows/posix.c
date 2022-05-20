@@ -4,6 +4,7 @@
  */
 
 #if defined(WIN32) || defined(WIN64)
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -1374,7 +1375,7 @@ ssize_t readv(int fildes, const struct iovec *iov, int iovcnt)
 		wsabuf++;
 		iovcnt--;
 	}
-	printf(">> readv recv %d\n", t);
+	printf(">> readv recv %ld\n", t);
 	return t;
 }
 
@@ -1421,7 +1422,7 @@ ssize_t writev(int fildes, const struct iovec *iov, int iovcnt)
 	free(buf);
 	if ((rc == SOCKET_ERROR) &&
 		(WSA_IO_PENDING != (err = WSAGetLastError()))) {
-		printf("WSASend failed with error: %d\n", err);
+		printf("WSASend failed with error: %lu\n", err);
 		return -err;
 	}
 
@@ -1577,7 +1578,7 @@ struct dirent *readdir(DIR *dirp)
 			return NULL;
 	}
 
-	snprintf(de.d_name, sizeof(de.d_name), find_data.cFileName);
+	snprintf(de.d_name, sizeof(de.d_name), "%s", find_data.cFileName);
 	de.d_ino = 0;
 
 	return &de;

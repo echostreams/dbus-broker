@@ -41,7 +41,11 @@ static int broker_dispatch_signals(DispatchFile *file) {
 
         c_assert(dispatch_file_events(file) == EPOLLIN);
 
+#ifdef WIN32
+        l = _read(broker->signals_fd, &si, sizeof(si));
+#else
         l = read(broker->signals_fd, &si, sizeof(si));
+#endif
         if (l < 0)
                 return error_origin(-errno);
 
@@ -122,7 +126,7 @@ static int parse_address_key(const char** p, const char* key, char** value) {
     }
 
     if (!r) {
-        r = strdup("");
+        r = _strdup("");
         if (!r)
             return -ENOMEM;
     }
@@ -387,7 +391,7 @@ int broker_new(Broker **brokerp, const char *machine_id, int log_fd, int control
          * run and babysit the broker.
          */
         //SOCKET listener_fd = socket(AF_INET, SOCK_STREAM, 0);
-        SOCKET listener_fd = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
+        SOCKET listener_fd = WSASocketW(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
         c_assert(listener_fd >= 0);
 
         struct sockaddr ai_addr;
