@@ -1,3 +1,11 @@
+/*
+ * http://0pointer.net/blog/introducing-sd-event.html
+ * Introducing sd-event
+ * The Event Loop API of libsystemd
+ * a short example how to use sd-event in a simple daemon
+ * works for both windows and linux
+ */
+
 #if defined(__linux__)
 #include <alloca.h>
 #else
@@ -17,8 +25,6 @@
 
 #include <systemd/sd-daemon.h>
 #include <systemd/sd-event.h>
-
-
 
 static int io_handler(sd_event_source* es, int fd, uint32_t revents, void* userdata) {
     void* buffer;
@@ -86,6 +92,7 @@ int main(int argc, char* argv[]) {
         goto finish;
     }
 #endif
+
     /* Let's make use of the default handler and "floating" reference features of sd_event_add_signal() */
     r = sd_event_add_signal(event, NULL, SIGTERM, NULL, NULL);
     if (r < 0)
@@ -95,15 +102,26 @@ int main(int argc, char* argv[]) {
         goto finish;
 
     /* Enable automatic service watchdog support */
-#if defined(__linux__)
+    /*
+     * libsystemd-mini doesn't support watchdog
+     */
     //r = sd_event_set_watchdog(event, true);
     //if (r < 0)
     //    goto finish;
-#endif
 
 #ifdef WIN32
-    fd = socket(AF_INET, SOCK_DGRAM, 0);
-    
+    fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    // set SOCK_NONBLOCK
+    u_long iMode = 1;
+    int status = ioctlsocket(fd, FIONBIO, &iMode);
+    if (status != NO_ERROR) {
+        fprintf(stderr, "ioctlsocket failed with error: %d\n", status);
+    }
+    // set SOCK_CLOEXEC
+    if (!SetHandleInformation((HANDLE)(uintptr_t)fd, HANDLE_FLAG_INHERIT, 0))
+    {
+        fprintf(stderr, "SetHandleInformation failed with error: %lu\n", GetLastError());
+    }    
 #else
     fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
 #endif

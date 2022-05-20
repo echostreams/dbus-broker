@@ -581,7 +581,7 @@ static int event_make_signal_data(
             *ret = d;
         return 0;
     }
-
+#if defined(__linux__)
     d->fd = fd_move_above_stdio(r);
 
     struct epoll_event ev = {
@@ -593,7 +593,7 @@ static int event_make_signal_data(
         r = -errno;
         goto fail;
     }
-
+#endif
     if (ret)
         *ret = d;
 
@@ -625,8 +625,8 @@ static void event_unmask_signal_data(sd_event* e, struct signal_data* d, int sig
         return;
     }
 
-    assert(d->fd >= 0);
 #if defined(__linux__)
+    assert(d->fd >= 0);
     if (signalfd(d->fd, &d->sigset, SFD_NONBLOCK | SFD_CLOEXEC) < 0)
         log_debug_errno(errno, "Failed to unset signal bit, ignoring: %m");
 #endif
